@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "~/Projects/micropython/py",
+        "./lib"
+    ]
+}

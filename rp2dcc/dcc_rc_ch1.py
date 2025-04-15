@@ -1,0 +1,233 @@
+"""DCC RailCom Block Detection
+    :author: Paul Redhead
+
+This module contains the functions and classes for DCC RailCom block detection on Channel 1.
+
+"""
+"""        Copyright (C) 2023, 2024, 2025 Paul Redhead
+
+        This program is free software: you can redistribute it and/or modify it
+        under the terms of the GNU General Public License as published by the Free Software Foundation, 
+        either version 3 of the License, or (at your option) any later version.
+        This program is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+        See the GNU General Public License for more details.
+        You should have received a copy of the GNU General Public License along with this program.
+        If not, see <http://www.gnu.org/licenses/>.
+"""
+
+from machine import  Pin, Timer
+from micropython import const
+
+from dcc_rc_pio import RailComRead
+from device import Device
+
+_MAX_NO_READ = const(10)    # maximum number of missed reads/no load
+_TIMER_PERIOD = const(50)   # time in ms between checks for current load on block 
+_FIRST_TIMER_PERIOD = const(1000)   # first check is delayed to let things settle
+
+
+class RComBlkDet(Device):
+    """Channel 1 (block) Detector
+    
+    This can run on the command station or an accessory controller.
+    
+    The enable pin is supplied if on the command station to mark the cutout. On accessory the PIO code monitors
+    the load current to detect the cutout.
+
+    In addition to interpreting channel 1 messages, we use the rx_pin to monitor the block for occupancy, detecting
+    non RailCom decoders and other loads. E.g coaches with lighting etc. This detection is typically not as sensitive
+    as other current based detectors as it uses same thresholds as required for RailCom message detection.
+
+    It's taken that a decoder may only be in one place at a time, but the implications of this are dealt with
+    elsewhere.
+
+    Datagram identifiers for channel 1 are defined in RCN-217 3.1 Table 5.
+
+    This inherits from the Device Class.
+
+    Block status may be:
+        - empty
+        - occupied, but no RailCom Channel 1 info available
+        - occupied and RailCom Channel 1 info available
+
+    Attributes:
+        BLK_EMPTY: Block unoccupied
+        BLK_CH1: Block occupied - RailCom channel 1 info
+        BLK_OCC: Block occupied - Load detected but no info
+
+    """
+    
+    # class constants
+
+    BLK_EMPTY = const(20)   # Block unoccupied
+    BLK_CH1   = const(21)   # Block occupied - RailCom channel 1 info
+    BLK_OCC   = const(22)   # Block occupied - Load detected but no info
+   
+
+    def __init__(self, rc_sm_num, rx_pin, enable_pin = None):
+        """Construct the RailCom block detector
+        
+        This constructs the RailCom block detector. This reads channel 1. It instatiates a RailCom reader using
+        the supplied state machine and receiver pin.  If the enable pin is not supplied, it's assumed that 
+        this is running on a remote accessory controller and the cutout timing is to be recovered from the DCC signal.
+        If the enable pin is supplied, then we are running on the command station and the cutout is defined by the
+        enable pin state, which is read-only in this context. The base Device class is initiated with the block name
+        block type.
+
+        Note:
+            The RailCom reader will use two sequentially numbered state machines - the first is supplied.
+
+            The RailCom reader will use two sequentially numbered GPIO pins for receiving - the first is supplied.
+
+        args:
+            self:
+            rc_sm_num:  the first state machine number.
+            rx_pin: the first receiver pin.
+            enable_pin: the pin as used by the DCC generator to assert the RailCom cutout (optional).
+
+        """
+        self._rc = RailComRead(rc_sm_num, rx_pin,  self._rail_com_ch1_msg, channel = 1, cu_pin=enable_pin)
+        self._id_val = {} # channel 1 payload values for ids 1 & 2
+        self._rx_pin = rx_pin
+        self._enable_pin = enable_pin
+        self._no_resp_count = _MAX_NO_READ
+        self._last_report = None  # this will be a tuple (address type, address, orientation)
+        # block state may be unknown, empty, occupied (no channel 1 data), occupied with channel 1 data
+        self._blk_state = Device.UNKNOWN
+        self._load_timer = Timer(mode = Timer.ONE_SHOT, period = _FIRST_TIMER_PERIOD, callback = self._load_check)
+        self.errors = {'lu':0, 'df':0, 'ic':0}
+        """Error counts by type"""
+        super().__init__('test', 'b')
+
+
+    def _load_check(self, _):
+        """ Load check timer expired callback
+        Check to see if there's a load on the block.
+        """
+        Device.check_core0()
+        if self._enable_pin is None or self._enable_pin.value() == 1:
+            # only check if we have power!
+
+            if self._rx_pin.value() == 1:
+                # no load
+                if self._no_resp_count < 0:
+                    if self._blk_state != RComBlkDet.BLK_EMPTY: 
+                    # consecutive missed response limit reached
+                    # but it's not been reported
+                        self._id_val = {}
+                        self._last_report = None
+                        self._blk_state = RComBlkDet.BLK_EMPTY
+                        self.report_event(RComBlkDet.BLK_EMPTY, None)
+                else:
+                    self._no_resp_count -= 1
+            else:
+                # false positive unlikely so report change immediately if was empty
+                # but allow limit misreads if last report was CH1 data
+                if self._blk_state == RComBlkDet.BLK_EMPTY:
+                    self._no_resp_count = _MAX_NO_READ
+                    self._blk_state = RComBlkDet.BLK_OCC
+                    self.report_event(RComBlkDet.BLK_OCC, None)
+                elif self._blk_state == RComBlkDet.BLK_CH1:
+                    if self._no_resp_count < 0:
+                        # consecutive limit reached
+                        self._id_val = {}
+                        self._last_report = None
+                        self._blk_state = RComBlkDet.BLK_OCC
+                        self.report_event(RComBlkDet.BLK_OCC, None)
+                    else:
+                        self._no_resp_count -= 1
+                
+        # start timer for next check
+        self._load_timer.init(mode = Timer.ONE_SHOT, period = _TIMER_PERIOD, callback = self._load_check)
+        
+  
+    def _rail_com_ch1_msg(self,  buffer, orientation):
+        """ This callback is called on termination of the RailCom Channel 1 message receipt window,
+        whether a message has been received or not. Any decoder on the associated block returns a channel 1
+        message. 
+
+        args:
+            self:
+            buffer:   translated data
+            orientation: orientation of DCC decoder wrt DCC signal
+        
+        """
+
+        # detector_side 1 or -1, 0 nothing detected.
+        if orientation == 0:
+            # do nothing at the moment
+            return
+
+        try:
+            if buffer[0] > 0x3f or buffer[1] > 0x3f:
+                self.errors['lu'] += 1  # look up error
+                return
+        except IndexError:
+            # msg too short
+            self.errors['df'] += 1  # log as data format error
+            return
+
+        # both values need to be present to get this far
+        # there's a valid response so reset the 'no response' count
+        self._no_resp_count =  _MAX_NO_READ
+        # and restart the timer
+        self._load_timer.init(mode = Timer.ONE_SHOT, period = _TIMER_PERIOD, callback = self._load_check)
+
+        # save the payload value against the id
+        self._id_val[buffer[0] >> 2] =  ((buffer[0] & 0x03) << 6) | buffer[1]
+
+        # try and build decoder address
+        try:
+            if self._id_val[1] == 0:
+            # short address
+                address_type = 's'
+                address = self._id_val[2]
+            elif self._id_val[1] == 0x60:
+                # consist address
+                address_type = 'c'
+                address = self._id_val[2]
+            elif (self._id_val[1] & 0xc0) == 0x80:
+                # long address
+                address_type = 'l'
+                address = (self._id_val[1] & 0x3f) << 8 + self._id_val[2]
+            else:
+                # ID1 content invalid - ignore
+                return
+        except KeyError:
+            # missing id 1 or id 2
+            # insufficient info - there may be enough next time!
+            return
+        
+        # if the occupancy report has changed since the last time
+        # report the event and update saved info for next time.
+        report_data = (address_type, address, orientation)
+        if report_data != self._last_report:
+            self.report_event(RComBlkDet.BLK_CH1, report_data)
+            self._blk_state = RComBlkDet.BLK_CH1
+            self._last_report = report_data
+
+
+if __name__ == '__main__':
+    from dcc_cmd_pio import DCCGen
+    from dcc_cmd_util import SpeedCommand, CV_Access
+    from dcc_rc_ch2 import RComCmdRsp
+
+    enable_pin = Pin(18, Pin.OUT, value = 1)
+    sleep_pin = Pin(19, Pin.OUT, value = 0)
+    dcc_pin = Pin(20, Pin.OUT)
+    c1_rx_pin = Pin(0, Pin.IN)
+    c2_rx_pin = Pin(15, Pin.IN)
+
+    # command stn rc1
+    rc_ch1 = RComBlkDet(4, c1_rx_pin, enable_pin)
+    
+    # block detect rc1
+    #rc_ch1 = RComBlkDet(4, c1_rx_pin)
+        
+    rc_ch2 = RComCmdRsp(6, c2_rx_pin, enable_pin)
+    dcc = DCCGen(0, dcc_pin, sleep_pin, enable_pin)
+
+    s1 = SpeedCommand(1, -1, 0)
+    s10 = SpeedCommand(10, 1, 0)
+    
