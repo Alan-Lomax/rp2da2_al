@@ -52,6 +52,8 @@ class RComCmdRsp(Device):
         DYN_REAL_SPEED0: real speed part 1 datagram identifier.
         DYN_REAL_SPEED1: real speed part 2 datagram identifier.
         DYN_RECEP_STATS: reception stats datagram identifier.
+        POM_CV:  event code for reporting a CV value from read or write
+        POM_TO:  event code for reporting POM access timeout
 
 
     """
@@ -103,11 +105,47 @@ class RComCmdRsp(Device):
         self._pom_acc = {}   # outstanding cv accesss requests by command type/address
 
 
-        self.errors = {'lu':0, 'df':0, 'ic':0} # error counts
-        """Error counts by error type."""
+        self._errors = {} # error counts
+        self._dgs = set() # Datagrams seen
+
         super().__init__('cmd', 'r')
 
+    def get_error_counts(self):
+        """ Get Error Counts
+        
+        Diagnostic method to retrieve the error counts for detected errors.
+        
+        returns:
+            a dictionary of counts by error code.
+        """
+        return self._errors
+    
+    def get_dg_list(self):
+        """ Get Datagram list
+        
+        Diagnostic method to retrieve the list of datagram types that have been  decoded.
+        
+        returns:
+            the set of datagram ids
+        """
+        return self._dgs
+    
+    def reset_stats(self):
+        """ Reset diagnostic information
+        
+        Clears the error counts and set of datagram ids.
+        """
+        self._errors = {}
+        self._dgs = set()
 
+
+
+
+    def _log_error(self,error_code):
+        try:
+            self._errors[error_code] += 1
+        except KeyError:
+            self._errors[error_code] = 1
 
     def _rail_com_ch2_msg(self, buffer, detector_side):
         """Handle RailCom Message Callback
@@ -128,6 +166,7 @@ class RComCmdRsp(Device):
         cmd = CommandPacket.get_last_command()
         if cmd is None:
             # no point in continuing if we don't know what command was issued
+            self._log_error('nc')   # no command - possible software sync error
             return
         address = cmd.get_address()
         if cmd.get_type() == CV_Access.TYPE:
@@ -150,7 +189,7 @@ class RComCmdRsp(Device):
 
 
 
-        # last command was to the broadcast address - no response expected
+        # if last command was to the broadcast address - no response expected
         # (unless we start looking at accessories too)
         if len(buffer) == 0:
             # no data
@@ -168,69 +207,86 @@ class RComCmdRsp(Device):
         """ 
         buff_iter = iter(buff)
         dg_id = None
-        # preset for implicit ack
-        protocol_byte = RailComRead.IMP_ACK
+        pb_set = set() # set of protocol bytes
         datagram = list()
 
         try:
             while True:
                 # StopIteration will end the loop
                 b = next(buff_iter)
-                # separate the datagram id and first 2 bits of payload
-                dg_id = (b & 0xFC)  >> 2
-                dg_payload = b & 0x03
-                try:
-                    error = False
-                    for _ in range(_DG2_LEN[dg_id]):
-                        b = next(buff_iter)
-                        if b == RailComRead.ERR_LU:
-                            # original byte was invalid Hamming weight 4
-                            self.errors['lu'] += 1
-                            protocol_byte = b
-                            error = True
-                        elif b > 0x3f:
-                            # datagram can't include protocol control byte
-                            self.errors['ic'] += 1
-                            protocol_byte = RailComRead.ERR_RESP
-                            error = True # so this and any more are ignored
-                        elif error:
-                            pass
+                if b == RailComRead.ERR_LU:
+                    # no point in going any further - as structure of
+                    # remaining message indeterminate
+                    self._log_error('h4')
+                    return datagram
+
+                if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
+                    # encoded protocol bytes
+                    # these only get reported once so save in a set
+                    # as ACK may be used as filler
+                    if b not in pb_set:
+                        # first time seen - ignore repeats
+                        if b == RailComRead.NAK and RailComRead.ACK in pb_set:
+                            # ack + nak indicates CV error!
+                            datagram.append((RailComRead.DG_RESP, RailComRead.CV_ERR))
                         else:
-                            dg_payload = (dg_payload << 6) + b # append sextet to payload
-                    # payload complete
-                    if not error:
-                        datagram.append((dg_id,dg_payload))
-                    #dg_id = None  # set back to None to mark datagram complete
-                except KeyError: # not datagram - assume it's a protocol byte
-                    if protocol_byte == RailComRead.IMP_ACK:
-                        protocol_byte = b # overwrite implicit ack
-                    elif protocol_byte == RailComRead.ACK and b == RailComRead.NAK:
-                        # RCN-217 says this is possible!
-                        protocol_byte = RailComRead.CV_ERR
-                dg_id = None  # set back to None to mark datagram complete
+                            datagram.append((RailComRead.DG_RESP, b))
+                        self._dgs.add(RailComRead.DG_RESP)
+                        pb_set.add(b)
+                else:
+                # separate the datagram id and first 2 bits of payload
+                    dg_id = (b & 0xFC)  >> 2
+                    dg_payload = b & 0x03
+                    try:
+                        error = False
+                        for _ in range(_DG2_LEN[dg_id]):
+                            b = next(buff_iter)
+                            if b == RailComRead.ERR_LU:
+                                # original byte was invalid Hamming weight 4
+                                self._log_error('h4')
+                                error = True
+                            elif b > 0x3f:
+                                # datagram can't include protocol control byte
+                                self._log_error('cb')
+                                error = True # so this and any more are ignored
+                            elif error:
+                                # error already seen - skip 
+                                pass
+                            else:
+                                dg_payload = (dg_payload << 6) + b # append sextet to payload
+                        # payload complete
+                        if not error:
+                            self._dgs.add(dg_id)
+                            datagram.append((dg_id,dg_payload))
+
+                    except KeyError: # not valid datagram (not in list)
+                        # no point in going any further - as structure of
+                        # remaining message indeterminate
+                        self._log_error('id')
+                        return datagram
+
+
+                    dg_id = None  # set back to None to mark datagram complete
 
 
         except StopIteration:
             if dg_id is not None:
                 # datagram not complete - ignore it - duff format
-                # other earlier datagrams in same message will be processed 
-                self.errors['df'] +=1
+                # other earlier datagrams in same message will be processed
+                self._log_error('df')
 
-
-        # add overal response datagrams
-        datagram.append((RailComRead.DG_RESP, protocol_byte))
         # create dg for side if set - this isn't really relevant to Ch2 
         # maybe remove
-        datagram.append((RailComRead.DG_SIDE, d_side))
+        # datagram.append((RailComRead.DG_SIDE, d_side))
         return datagram
 
     def _act_on_datagram(self, datagram, addr):
         """Take action on datagram"""
         
         for dg in datagram:
-            if dg == (RailComRead.DG_RESP, RailComRead.NO_RESP):
-                # quietly ignore no response - there can be no others
-                return  
+            #if dg == (RailComRead.DG_RESP, RailComRead.NO_RESP):
+            #    # quietly ignore no response - there can be no others
+            #    return  
 
             id, payload = dg
             if id == RComCmdRsp.DG_DYN:

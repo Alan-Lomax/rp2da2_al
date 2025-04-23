@@ -1,4 +1,4 @@
-"""Module for 0.91 inch OLED on i2c
+"""Device driver module for 0.91 inch OLED on i2c
 
 128 columns by 32 lines
 
@@ -31,13 +31,32 @@ _I2C_ADDR = const(0x3c)
 
 
 class Page(FrameBuffer):
+    """Display Page Class
+    
+    The display is organised into 4 pages.
+    It is based on the FrameBuffer class."""
     def __init__(self):
+        """Construct a page.
+        
+        This allocates creates a framebuffer with the buffer allocated here.
+        
+        Args:
+            self:
+            
+        """
         self._data_buff = bytearray(_OLED_WIDTH + 1)  # monochrome eight pixels per byte
         self._data_buff[0] = _I2C_RAM # it will always hold data for ram
         self._data_buff_mv = memoryview(self._data_buff)
         super().__init__(self._data_buff_mv[1:], _OLED_WIDTH, _PAGE_HEIGHT, MONO_VLSB)
 
     def data_buff(self):
+        """Get the data buffer
+
+        This returns a memory view of the buffer. 
+        
+        Returns:
+            Data buffer
+            """
         return self._data_buff_mv
 
 

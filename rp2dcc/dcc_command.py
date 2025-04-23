@@ -1,7 +1,8 @@
 """DCC module
     :author: Paul Redhead
 
-This and associated modules contain the functions and classes for DCC command station.
+This module provides high level APIs. It and associated modules in the package contain the functions
+and classes for DCC command station.
 
 A command comprises a preamble, one or more instruction/data bytes and an error detection (checksum) byte.
 Each byte is preceeded by a single '0' bit.
@@ -43,8 +44,6 @@ two for RailCom. The two RailCom state machines must be on the same PIO block.
         If not, see <http://www.gnu.org/licenses/>.
 """
 
-from collections import deque
-
 
 from micropython import const
 from machine import Pin
@@ -74,13 +73,6 @@ class DCCCommand():
         
     """
 
-    """# class constants - may be imported by other modules
-    FWD = DCCGen.FWD
-    REV = DCCGen.REV
-
-    ON = DCCGen.ON
-    OFF = DCCGen.OFF
-    """
     # class constants - may be imported by other modules
     FWD = const(1)
     REV = const(-1)
@@ -279,8 +271,15 @@ class DCCCommand():
     def _pom_cmd(self, command):
         """Process Program on Main command
 
+        The response to a POM command may be delayed. The decoder does not have to put the POM
+        response in the immediately following window and may respond following a subsequent command to that
+        decoder.
+        
+        To ensure that there is a subsequent command the address is checked to see if in the active list.
         The command will be rejected if the address is not in the active list or
         there is a POM command already being processed.
+
+
 
         return:
             True if command accepted
@@ -350,7 +349,7 @@ class DCCCommand():
 
     
 if __name__ == '__main__':
-    import _thread
+    import _thread, time
     from dcc_rc_ch1 import RComBlkDet
     from dcc_rc_ch2 import RComCmdRsp
 
@@ -360,6 +359,8 @@ if __name__ == '__main__':
     dcc_pin = Pin(20, Pin.OUT)
     c2_rx_pin = Pin(15, Pin.IN)
     c1_rx_pin = Pin(0, Pin.IN)
+
+    time_stamp = time.ticks_ms()
 
     rc_ch1 = RComBlkDet(4, c1_rx_pin, enable_pin)
 
@@ -372,6 +373,33 @@ if __name__ == '__main__':
         
         while True:
             s.show_event(Device.get_event_report())
+
+    def print_stats(reset = True):
+        global time_stamp
+        elapsed_time = time.ticks_diff(time.ticks_ms(), time_stamp)  
+        print("** Commands **")
+        counts = CommandPacket.get_counts()
+        total = sum(counts.values())
+        print(f"Rate: {(total) * 1000 / elapsed_time:.2f} per sec")
+        print(counts)
+
+        print("** Channel 1 **")
+        print("datagrams:",rc_ch1.get_dg_list())
+        counts = rc_ch1.get_error_counts()
+        print("errors   :", counts)
+        print(f"err. rate: {(sum(counts.values())/total):.0%}")
+        print("** Channel 2 **")
+        print("datagrams:",rc_ch2.get_dg_list())
+        counts = rc_ch2.get_error_counts()
+        print("errors   :", counts)
+        print(f"err. rate: {(sum(counts.values())/total):.0%}")
+        if reset:
+            rc_ch1.reset_stats()
+            rc_ch2.reset_stats()
+            CommandPacket.reset_counts()
+            time_stamp = time.ticks_ms()
+
+
 
     _thread.start_new_thread(main1,())
 

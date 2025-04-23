@@ -96,13 +96,51 @@ class RComBlkDet(Device):
         # block state may be unknown, empty, occupied (no channel 1 data), occupied with channel 1 data
         self._blk_state = Device.UNKNOWN
         self._load_timer = Timer(mode = Timer.ONE_SHOT, period = _FIRST_TIMER_PERIOD, callback = self._load_check)
-        self.errors = {'lu':0, 'df':0, 'ic':0}
-        """Error counts by type"""
-        super().__init__('test', 'b')
+        self._errors = {} # Error counts by type
+        self._dgs = set() # Datagrams seen
+        super().__init__('b001', 'b')
+
+
+    def get_error_counts(self):
+        """ Get Error Counts
+        
+        Diagnostic method to retrieve the error counts for detected errors.
+        
+        returns:
+            a dictionary of counts by error code.
+        """
+        return self._errors
+    
+    def get_dg_list(self):
+        """ Get Datagram list
+        
+        Diagnostic method to retrieve the list of datagram types that have been  decoded.
+        
+        returns:
+            the set of datagram ids
+        """
+        return self._dgs
+    
+    def reset_stats(self):
+        """ Reset diagnostic informations
+        
+        Clears the error counts and set of datagram ids.
+        """
+        
+        self._errors = {}
+        self._dgs = set()
+
+
+    def _log_error(self,error_code):
+        try:
+            self._errors[error_code] += 1
+        except KeyError:
+            self._errors[error_code] = 1
 
 
     def _load_check(self, _):
         """ Load check timer expired callback
+
         Check to see if there's a load on the block.
         """
         Device.check_core0()
@@ -157,25 +195,35 @@ class RComBlkDet(Device):
         # detector_side 1 or -1, 0 nothing detected.
         if orientation == 0:
             # do nothing at the moment
+            # not logged as error - may be nothing there
             return
 
         try:
+            if buffer[0] == RailComRead.ERR_LU or buffer[1] == RailComRead.ERR_LU:
+                self._log_error('h4')  # hamming code look up error detected earlier
+                return
+
             if buffer[0] > 0x3f or buffer[1] > 0x3f:
-                self.errors['lu'] += 1  # look up error
+                self._log_error('ic') # channel 1 datagrams cannot include control bytes
                 return
         except IndexError:
             # msg too short
-            self.errors['df'] += 1  # log as data format error
+            self._log_error('df') # log as data format error
             return
 
         # both values need to be present to get this far
         # there's a valid response so reset the 'no response' count
         self._no_resp_count =  _MAX_NO_READ
-        # and restart the timer
+        # and restart the load check timer
         self._load_timer.init(mode = Timer.ONE_SHOT, period = _TIMER_PERIOD, callback = self._load_check)
 
         # save the payload value against the id
-        self._id_val[buffer[0] >> 2] =  ((buffer[0] & 0x03) << 6) | buffer[1]
+        dg_id = buffer[0] >> 2
+        self._id_val[dg_id] =  ((buffer[0] & 0x03) << 6) | buffer[1]
+
+        # track datagrams by type
+        self._dgs.add(dg_id)
+  
 
         # try and build decoder address
         try:

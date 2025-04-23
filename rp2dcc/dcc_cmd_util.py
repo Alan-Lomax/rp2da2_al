@@ -72,6 +72,7 @@ class CommandPacket:
     # class variables
     _state_machine = None # the DCC serialisation state machine
     _last_command = None # most recently sent command
+    _counts = {}
 
 
     # class constants
@@ -99,8 +100,14 @@ class CommandPacket:
         """
         
         return cls._last_command
-
-
+    
+    @classmethod
+    def get_counts(cls):
+        return cls._counts
+    
+    @classmethod
+    def reset_counts(cls):
+        cls._counts = {}
 
 
     def __init__(self, byte_list = None):
@@ -204,6 +211,10 @@ class CommandPacket:
             # OK to send
             self._state_machine.put(self._packet_buff)
             CommandPacket._last_command = self
+            try:
+                CommandPacket._counts[self._type] += 1
+            except KeyError:
+                CommandPacket._counts[self._type] = 1
             return CommandPacket.SENT
         # edit in progress - defer sending till next time
         return CommandPacket.NOT_SENT
@@ -530,10 +541,4 @@ class CV_Access(CommandPacket):
             The CV numver being accessed.
         """
         return self._cv
-
-    '''def get_timeout(self):
-        """Get the Timeout expiry time
-        
-        The POM command expiry time is set when the command is issued"""
-        return self._expiry_time_ms
-    '''
+    

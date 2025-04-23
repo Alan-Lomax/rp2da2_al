@@ -34,9 +34,7 @@ Memory mapped addresses and offsets are as defined in the RP2040 datasheet.
 
 from machine import Pin, mem32
 
-import time
-
-from micropython import const #, alloc_emergency_exception_buf
+from micropython import const
 import array
 import rp2
 
@@ -57,10 +55,6 @@ SM1_EXECCTRL = const(0xe4)
 """ State machine 1 exec control offset """
 SM3_EXECCTRL = const(0x114)
 """ State machine 3 exec control offset """
-
-#alloc_emergency_exception_buf(100)
-
-
 
 
 class RailComRead:
@@ -104,9 +98,7 @@ class RailComRead:
         RES:  reserved
         NAK: negative acknowledgement from decoder (may follow ACK!)
         CV_ERR: implied response from ACK, NAK sequence
-        NO_RESP: ch 2 - no response to command, ch 1 - no decoder
         IMP_ACK: no explicit ACK but datagram received (implicit ACK)
-        ERR_RESP: error in response (e.g. invalid content, format etc
         ERR_LU: raw data byte not valid Hamming 4 weighted value 
         DG_RESP: internally generated datagram containing protocol control byte
         DG_SIDE: internally generated datagram indicating decoder orientation wrt to DCC signal
@@ -121,11 +113,13 @@ class RailComRead:
     RES =  const(0x82)
     NAK =  const(0x83)
     # locally interpreted responses
-    CV_ERR = const(0x84)
-    NO_RESP = const(0x85)
+    ERR_LU = const(0x84)
+    # other available response codes (used elsewhere)
+    CV_ERR = const(0x85)
     IMP_ACK = const(0x86)
     ERR_RESP = const(0x87)
-    ERR_LU = const(0x88)
+
+
     # datagram IDs (incomplete at present) - ID's are 6 bits 
     # IDs >= 64 are internally generated datagrams
     DG_RESP = const(0x40) # protocol control byte
@@ -386,7 +380,7 @@ class RailComRead:
         jmp("await_start")      [0] # restart wait if not there
 
         label("start_ok")
-        out(x,1)                [0]  # get the other side bit from osr and save
+        out(x,1)                [0]  # get the orientation bit from osr and save
         set(y, 7)               [11] # count 8 bits and wait 12 ticks + 4 so far
 
         label("next_bit")
@@ -424,25 +418,22 @@ class RailComRead:
         # although documentation and code suggests it should reset it
         self._smrx.exec(self._restart)
 
-        ts = time.ticks_us()
         # set raw_buff limit to amount in fifo otherwise read will hang
         raw_buff = memoryview(self._rx_raw)[:self._smrx.rx_fifo()]
 
         if len(raw_buff) == 0:
-            # report no data
+            # report no data - and no orientation
             self._callback(self._rx_buff[0:0], 0)
             return
 
         self._smrx.get(raw_buff)  # read data into raw buffer
-
-        t1 = time.ticks_us() - ts
 
         #self._smrx.restart()
        
         # side is saved as 1 or -1 e.g. s * 2 - 1
         # this is the orienation of the decoder wrt the DCC signal
         detector_side = ((raw_buff[0] & 0x100) >> 7) - 1
-        #raw_buff = raw_buff[:min(_CH_SIZE[self._channel - 1], len(raw_buff))]
+
         max_buf = _CH_SIZE[self._channel - 1] # max number of bytes for this channel
         if len(raw_buff) > max_buf:
             # quietly truncate the buffer
@@ -457,14 +448,10 @@ class RailComRead:
                 x += 1
             except KeyError:
                 # no it's not!
-                #print(self._channel, x, [hex(c) for c in raw_buff])
-                #print(self._channel, x, hex(rxd))
                 self._rx_buff[x] = RailComRead.ERR_LU
                 x += 1
         # buffer now translated - parsing for channel specific info done in callback
-        t2 = time.ticks_us() - ts
         self._callback(memoryview(self._rx_buff)[:x], detector_side)
-        #Device.timings.append((self._channel, t1, t2 - t1, time.ticks_us() - ts - t2))
         return
 
 if __name__ == '__main__':
