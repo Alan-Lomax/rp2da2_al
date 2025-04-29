@@ -66,7 +66,7 @@ class RailComRead:
     enable signal to the DRV8874 being set low. This cutout siganl being low is used directly when detecting
     on the command station. A remote block detector uses the RailCom detector output to detect the cutout.
 
-    A RailCom reader object works on either on Channel 1 (block) or Channel 2 (central) but not both. 
+    A RailCom reader object works on either on Channel 1 (block) or Channel 2 (central/global) but not both. 
 
     Channel 1 is used for block occupancy detection and the detector may run on the commamd station or a remote
     detector. Channel 2 is used for command responses and other decoder specific information.  It only runs
@@ -97,9 +97,9 @@ class RailComRead:
         BUSY: busy response from decoder
         RES:  reserved
         NAK: negative acknowledgement from decoder (may follow ACK!)
-        CV_ERR: implied response from ACK, NAK sequence
         IMP_ACK: no explicit ACK but datagram received (implicit ACK)
-        ERR_LU: raw data byte not valid Hamming 4 weighted value 
+        ERR_LU: raw data byte not valid Hamming 4 weighted value
+        ERR_LU: Overrun error (no valid stop bit)
         DG_RESP: internally generated datagram containing protocol control byte
         DG_SIDE: internally generated datagram indicating decoder orientation wrt to DCC signal
     """
@@ -114,16 +114,16 @@ class RailComRead:
     NAK =  const(0x83)
     # locally interpreted responses
     ERR_LU = const(0x84)
+    ERR_OE = const(0x85)
     # other available response codes (used elsewhere)
-    CV_ERR = const(0x85)
-    IMP_ACK = const(0x86)
-    ERR_RESP = const(0x87)
+    IMP_ACK = const(0x87)
+    ERR_RESP = const(0x88)
 
 
     # datagram IDs (incomplete at present) - ID's are 6 bits 
     # IDs >= 64 are internally generated datagrams
     DG_RESP = const(0x40) # protocol control byte
-    DG_SIDE = const(0x41) # side - originating decoder orientation
+    # DG_SIDE = const(0x41) # side - originating decoder orientation
 
     _H4LU = {
     0xAC:0x00, 0xAA:0x01, 0xA9:0x02, 0xA5:0x03,
@@ -151,7 +151,6 @@ class RailComRead:
     N.B. the 6 special values are not valid for Ch1.
 
     """
-
 
 
 
@@ -350,51 +349,58 @@ class RailComRead:
         been read by the application, which restarts the state machine.
 
         The first input pin is the 'or' of the two sides of the detector circuit. One side detects
-        +ve going RailCom pulses and the second -ve going pulses.
+        +ve going RailCom pulses and the second -ve going pulses. This is inverted. Low indicates logic '1'
+        and vice versa.
         
         The second input pin is the first side.  This may be used to determine which side is
-        active, thus indicating which way the locomotive is facing relative to the track DCC.
+        active, thus indicating which way the locomotive is facing relative to the track DCC. This is not
+        inverted.
 
         The second pin may be NC or used for other purposes, in which case the indication of the
         active side will be indeterminate.
 
         The osr is used as an additional register.  It's not in use for transmission.
 
-        The state machine clock is set at 16 x the bit rate.
+        The state machine clock is set at 16 x the bit rate. (4MHz)
 
         There's no programatic way back to the first instruction within the PIO program.  The
         state machine is restarted by the controlling application externally forcing execution
         of a jump to the first instruction.
 
-        17 instructions
+        16 instructions
         """
 
         wait(1, irq, rel(4))    [0] # wait to be enabled
         wrap_target()
         # each bit is sampled at 16 tick intervals
+
         label("await_start")
-        wait(0, pin, 0)         [7] # wait for start bit leading edge and delay 1/2 bit time
-        mov(osr, pins)          [0] # read pins into osr (not used for rx)
-        out(x,1)                [0] # get the ls bit from osr - should still be 0
-        jmp(not_x, "start_ok")  [0] # check start bit still there
-        jmp("await_start")      [0] # restart wait if not there
+        # we want a confirmed start bit to be at least 3/4 bit time 
+        # so we sample it 6 times following the initial edge
+        set(y,5)                [0]       
+        wait(0, pin, 0)         [0] # wait for start bit leading edge
+        label("spin")
+        jmp(pin,"await_start")  [0] #back to 0, not long enough for start bit
+        jmp(y_dec, "spin")      [0] # spin for next sample
 
         label("start_ok")
-        out(x,1)                [0]  # get the orientation bit from osr and save
-        set(y, 7)               [11] # count 8 bits and wait 12 ticks + 4 so far
+        mov(osr, pins)          [0]  # get start bit and orientation (can't get orientation only!)
+        out(y,1)                [0]  # shift out start bit  & discard leaving orientation
+        set(y, 7)               [9]  # count 8 bits and wait 2 ticks + 14 so far to end start bit + half bit
 
         label("next_bit")
         in_(pins,1)             [0]  # read next bit into isr
         jmp(y_dec,"next_bit")   [14] # wait 15 more ticks - 16 ticks in total  
         jmp(pin,"stop_ok")      [0] # if all data bits read check stop bit
         wait(1, pin, 0)         [0] # overrun error - wait for line idle
-        mov(isr, null)          [0] # clear the isr - data discarded
-        jmp("await_start")      [0] # wait for next start bit
+        mov(isr, invert(null))  [0] # clear the isr - to all '1's for overrun
+        jmp("push")             [0]
 
         label("stop_ok")            # stop bit OK
-        in_(x,1)                [0] # shift active side bit into isr
+        in_(osr,1)              [0] # shift orientation bit into isr
         in_(null, 23)           [0] # shift all bits to l.s. end of isr
-        push(noblock)           [0] # and save isr to rx FIFO - data lost if overrun
+        label("push")
+        push(noblock)           [0] # and save isr to rx FIFO - data lost if FIFO overrun
 
         wrap()                      # wait for next start bit
 
@@ -427,11 +433,10 @@ class RailComRead:
             return
 
         self._smrx.get(raw_buff)  # read data into raw buffer
-
-        #self._smrx.restart()
        
         # side is saved as 1 or -1 e.g. s * 2 - 1
         # this is the orienation of the decoder wrt the DCC signal
+        # orienatation is invalid in case of character overrun
         detector_side = ((raw_buff[0] & 0x100) >> 7) - 1
 
         max_buf = _CH_SIZE[self._channel - 1] # max number of bytes for this channel
@@ -440,6 +445,7 @@ class RailComRead:
             raw_buff = raw_buff[:max_buf]
         # the raw buffer is in words - bits 0 - 7 data byte as received
         # bit 8 (the side bit) is ignored on all but first byte
+        # character overrun error is reported as all '1's
         x = 0
         for rxd in raw_buff:
             try:
@@ -448,7 +454,10 @@ class RailComRead:
                 x += 1
             except KeyError:
                 # no it's not!
-                self._rx_buff[x] = RailComRead.ERR_LU
+                if (rxd & 0x200) != 0:
+                    self._rx_buff[x] = RailComRead.ERR_OE
+                else:
+                    self._rx_buff[x] = RailComRead.ERR_LU
                 x += 1
         # buffer now translated - parsing for channel specific info done in callback
         self._callback(memoryview(self._rx_buff)[:x], detector_side)

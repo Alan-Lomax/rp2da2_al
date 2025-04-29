@@ -489,23 +489,25 @@ class CV_Access(CommandPacket):
         This overrides CommandPacket.send().
         Determine if send necessary.
 
+        According to RCN214 POM read commands only need to be sent once,
+        but Train-O-Matic decoders seem to need the read command to be sent twice
+        as for a write.
+
         args:
             self:
 
         returns:
             Result of attempted send.  SENT, NOT_SENT or SENT_POM 
         """
-        if self._operation == 'r':
-            # POM read CV
-            if super().send() == CommandPacket.SENT:
-                self._state = CommandPacket.SENT_POM # send complete
-                return self._state
-            return CommandPacket.NOT_SENT
-        # write command - gets sent twice
+
+        
+        # POM command - gets sent twice
         if super().send() == CommandPacket.SENT:
             if self._state == CommandPacket.SENT: # both sends done
                 self._state = CommandPacket.SENT_POM # send complete
-                return self._state
+            else:
+                self._state = CommandPacket.SENT
+            return self._state
         return CommandPacket.NOT_SENT # nothing sent this time!
 
 

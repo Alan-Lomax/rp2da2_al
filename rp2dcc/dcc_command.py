@@ -109,6 +109,7 @@ class DCCCommand():
         # transmission. Speed & function commands are never deleted but POM commands have
         # limitied life span 
         self._packet_list = {}              # create empty dictionary
+        self._pom_packet = None             # and no outstanding pom command
         # instantiate dcc generator
         # we use the entire PIO memory so only one state machine and the choice is arbitary!
         self._dcc_gen_pio = DCCCmdTx(gen_sm_num, DCC_pn, sleep_pn, enable_pn)
@@ -232,7 +233,7 @@ class DCCCommand():
 
         return True
     
-    def read_cv(self, address , cv_num):
+    def read_cv(self, address, cv_num):
         """Read CV (POM)
         
         This initiates reading a CV using Programming on Main in conjunction with RailCom.
@@ -251,6 +252,30 @@ class DCCCommand():
         if not (1 <= cv_num <= 1024):
             return False
         return self._pom_cmd(CV_Access(address, cv_num - 1))
+    
+    def write_cv(self, address, cv_num, new_val):
+        """Write CV (POM)
+        
+        This initiates writing a CV using Programming on Main in conjunction with RailCom.
+
+        The command is validated and the write request scheduled for action. The addressed
+        decoder must be active and the command will be rejected by the command generator class
+        this is not true.
+
+        args:
+            self:
+            address:
+            cv_num: cv number as entered - users count from 1, DCC counts from 0!
+            new_val: the new value for the CV
+
+        """
+        if not (1 <= cv_num <= 1024):
+            return False
+        if not (0 <= new_val <= 255):
+            return False
+        return self._pom_cmd(CV_Access(address, cv_num - 1, operation = 'w', value = new_val))
+        
+
     
 
 
@@ -285,14 +310,13 @@ class DCCCommand():
             True if command accepted
             False if command rejected
         """
-        type = command.get_type()
         addr = command.get_address()
         if addr not in self._active_address:
             return False
-        if (type, addr) in self._packet_list:
-            # POM commands are temporary and only 1 is allowed per decoder
+        if self._pom_packet is not None:
+            # POM commands are temporary and only 1 is allowed
             return False
-        self._packet_list[(type, addr)] = command
+        self._pom_packet = command
         return True
 
     def _nxt_packet(self, _):
@@ -320,25 +344,29 @@ class DCCCommand():
             # list empty send the DCC idle packet
             self._idle_packet.send()
             return
+        
+        if self._pom_packet is None:
+            # POM packet if there takes precidence
 
-        try:
-            # get the next packet in the list
-            packet_key = next(self._packet_iter)
-        except StopIteration:
-            # at end of list - renew iterator
-            self._packet_iter = iter(self._packet_list)
-            packet_key = next(self._packet_iter)
-        # send the command
-        #t1 = time.ticks_us() - ts
-        result = self._packet_list[packet_key].send()
+            try:
+                # get the next packet in the list
+                packet_key = next(self._packet_iter)
+            except StopIteration:
+                # at end of list - renew iterator
+                self._packet_iter = iter(self._packet_list)
+                packet_key = next(self._packet_iter)
+            # send the command
+            #t1 = time.ticks_us() - ts
+            result = self._packet_list[packet_key].send()
+        else:
+            result = self._pom_packet.send()
 
         if result == CommandPacket.NOT_SENT:
             self._idle_packet.send() # send idle packet instead
         elif result == CommandPacket.SENT_POM:
             # POM commands get deleted once sent
-            del(self._packet_list[packet_key])
+            self._pom_packet = None
         # else nothing to do if normal command sent OK
-        #Device.timings.append((3,t1, time.ticks_us() - ts - t1))
         return
 
 

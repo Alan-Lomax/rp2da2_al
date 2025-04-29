@@ -197,8 +197,15 @@ class RComBlkDet(Device):
             # do nothing at the moment
             # not logged as error - may be nothing there
             return
+        # there must be at least one 1 byte there
+        if buffer[0] == RailComRead.ERR_OE:
+            # first character has overrun - most likely switching noise after end of window
+            # not logged
+            return
 
         try:
+            if buffer[1] == RailComRead.ERR_OE:
+                self._log_error('oe') # overrun on in datagram
             if buffer[0] == RailComRead.ERR_LU or buffer[1] == RailComRead.ERR_LU:
                 self._log_error('h4')  # hamming code look up error detected earlier
                 return
@@ -207,8 +214,8 @@ class RComBlkDet(Device):
                 self._log_error('ic') # channel 1 datagrams cannot include control bytes
                 return
         except IndexError:
-            # msg too short
-            self._log_error('df') # log as data format error
+            # datagram too short
+            self._log_error('df') # log as datagram format error
             return
 
         # both values need to be present to get this far

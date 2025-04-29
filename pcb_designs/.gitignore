@@ -1,0 +1,4 @@
+# Kicad specific exclusions
+*[Bb]ackups/
+**/[Gg]erbers/*.zip
+fp-info-cache

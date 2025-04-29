@@ -128,8 +128,15 @@ class Screen():
         self._oled.page[1].text(f'a:{address} c:{cv_num} timeout', 0, 0)
         self._oled.show_page(1)
 
+    def _handle_pom_nak(self,src, data):
+        address, cv_num = data
+        self._oled.page[1].fill(0)
+        self._oled.page[1].text(f'a:{address} c:{cv_num} NAK', 0, 0)
+        self._oled.show_page(1)
+
     _event_handler = {RComBlkDet.BLK_EMPTY: _handle_blk_empty,
                       RComBlkDet.BLK_OCC:_handle_blk_occ,
                       RComBlkDet.BLK_CH1: _handle_blk_ch1,
                       RComCmdRsp.POM_CV: _handle_cv_val,
-                      RComCmdRsp.POM_TO: _handle_pom_to}
+                      RComCmdRsp.POM_TO: _handle_pom_to,
+                      RComCmdRsp.POM_NAK: _handle_pom_nak}

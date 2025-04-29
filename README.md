@@ -1,11 +1,10 @@
 # rp2da2
 
----
  Model Railway Distributed Automation for RP2 (and other MicropPython MCUs).
 
 ---
 
-## Modules
+## Software Modules
 
 **device** - This provides the Device class, a base class for hardware device drivers and similar objects.
 
@@ -75,7 +74,23 @@ Parameters
 
 ---
 
-**set_fg1** *(address, f_num, state)*
+method **write_cv** *(address, cv_num, new_val)*
+
+This initiates writing a CV using Programming on Main in conjunction with RailCom.
+
+The command is validated and the write request scheduled for action. The addressed
+decoder must be active and the command will be rejected by the command generator class
+this is not true.
+
+Parameters
+
+- *address*
+
+- *cv_num* cv number as entered - users count from 1, DCC counts from 0!
+
+- *new_val* the new value for the CV
+
+method **set_fg1** *(address, f_num, state)*
 
 Set Function Group 1
 
@@ -139,6 +154,7 @@ ON = const(1)
 
 ### DCC Diagnostics
 
+---
 Module dcc_command
 
 function **print_stats** *(reset = True)*

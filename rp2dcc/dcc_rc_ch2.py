@@ -68,6 +68,7 @@ class RComCmdRsp(Device):
     # event codes
     POM_CV    = const(30)   # CV value from read or write
     POM_TO    = const(31)   # POM access timeout
+    POM_NAK   = const(32)   # POM access NAK
 
 
     def __init__(self, rc_sm_num, rx_pn, enable_pn):
@@ -219,6 +220,10 @@ class RComCmdRsp(Device):
                     # remaining message indeterminate
                     self._log_error('h4')
                     return datagram
+                if b == RailComRead.ERR_OE:
+                    # no point in going any further - and
+                    # don't bother logging - this is most likely switching noise after end of window
+                    return datagram
 
                 if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
                     # encoded protocol bytes
@@ -226,11 +231,11 @@ class RComCmdRsp(Device):
                     # as ACK may be used as filler
                     if b not in pb_set:
                         # first time seen - ignore repeats
-                        if b == RailComRead.NAK and RailComRead.ACK in pb_set:
+                        #if b == RailComRead.NAK and RailComRead.ACK in pb_set:
                             # ack + nak indicates CV error!
-                            datagram.append((RailComRead.DG_RESP, RailComRead.CV_ERR))
-                        else:
-                            datagram.append((RailComRead.DG_RESP, b))
+                        #    datagram.append((RailComRead.DG_RESP, RailComRead.CV_ERR))
+                        #else:
+                        datagram.append((RailComRead.DG_RESP, b))
                         self._dgs.add(RailComRead.DG_RESP)
                         pb_set.add(b)
                 else:
@@ -244,6 +249,10 @@ class RComCmdRsp(Device):
                             if b == RailComRead.ERR_LU:
                                 # original byte was invalid Hamming weight 4
                                 self._log_error('h4')
+                                error = True
+                            if b == RailComRead.ERR_OE:
+                                # original byte was invalid Hamming weight 4
+                                self._log_error('oe')
                                 error = True
                             elif b > 0x3f:
                                 # datagram can't include protocol control byte
@@ -309,6 +318,14 @@ class RComCmdRsp(Device):
                     self.report_event(RComCmdRsp.POM_CV, (addr, cv + 1, payload))
                 except KeyError:
                     pass
+            elif dg == (RailComRead.DG_RESP, RailComRead.NAK):
+                try:
+                    cv, _= self._pom_acc[(addr)]
+                    del(self._pom_acc[(addr)]) # no longer needed
+                    self.report_event(RComCmdRsp.POM_NAK, (addr, cv + 1))
+                except KeyError:
+                    pass
+
 
         # save the last received datagrams            
         self._rc_msg[addr] = (datagram)
