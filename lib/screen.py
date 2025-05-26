@@ -45,6 +45,8 @@ class Screen():
     """
 
     _scrn = None # this will be set to the singleton object on instantiation
+
+    _CV_LU = {(8, 151):"ESU", (8, 145):"ZIMO", (8, 78):"TOM"}
     
 
     @classmethod
@@ -119,7 +121,10 @@ class Screen():
     def _handle_cv_val(self,src, data):
         address, cv_num, value = data
         self._oled.page[1].fill(0)
-        self._oled.page[1].text(f'a:{address} c:{cv_num} v:{value}', 0, 0)
+        try:
+            self._oled.page[1].text(f'a:{address} {Screen._CV_LU[(cv_num, value)]}', 0, 0)
+        except KeyError:
+            self._oled.page[1].text(f'a:{address} c:{cv_num} v:{value}', 0, 0)
         self._oled.show_page(1)
 
     def _handle_pom_to(self,src, data):

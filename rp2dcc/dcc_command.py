@@ -65,7 +65,6 @@ class DCCCommand():
 
     
     Attributes:
-        IDLE_PACKET:    A DCC idle packet.  To be transmitted if no other packets in list.
         FWD:    Forward direction
         REV:    Reverse direction
         ON:     Power On

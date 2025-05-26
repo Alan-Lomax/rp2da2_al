@@ -58,7 +58,7 @@ class CommandPacket:
     inclusive of address bytes but not counting preamble, error check or packet end.
 
     The device driver for the PIO is a singleton class and it's assumed here that any variables held here
-    to the PIO device driver may be held as class variables.
+    specific to the PIO device driver may be held as class variables.
     
 
     Attributes:
@@ -72,7 +72,7 @@ class CommandPacket:
     # class variables
     _state_machine = None # the DCC serialisation state machine
     _last_command = None # most recently sent command
-    _counts = {}
+    _counts = {}        # counts of issued commands by type
 
 
     # class constants
@@ -148,8 +148,7 @@ class CommandPacket:
                 raise RuntimeError ('DCC command too long')
             self._packet_buff = array.array('I', range(buff_len))
             self.set_buffer(byte_list)
-        # initialy mark command as inactive - must be explicitly activated
-        # self._active = False
+
 
     def set_buffer(self, byte_list):
         """Set buffer contents

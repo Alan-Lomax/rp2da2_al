@@ -90,6 +90,8 @@ Parameters
 
 - *new_val* the new value for the CV
 
+---
+
 method **set_fg1** *(address, f_num, state)*
 
 Set Function Group 1
