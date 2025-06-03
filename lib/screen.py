@@ -47,6 +47,8 @@ class Screen():
     _scrn = None # this will be set to the singleton object on instantiation
 
     _CV_LU = {(8, 151):"ESU", (8, 145):"ZIMO", (8, 78):"TOM"}
+    """Translation table for CV number, value tuples into text.
+    Initial contents decode CV 8 values into manufacturer text."""
     
 
     @classmethod

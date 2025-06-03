@@ -99,9 +99,8 @@ class RailComRead:
         NAK: negative acknowledgement from decoder (may follow ACK!)
         IMP_ACK: no explicit ACK but datagram received (implicit ACK)
         ERR_LU: raw data byte not valid Hamming 4 weighted value
-        ERR_LU: Overrun error (no valid stop bit)
+        ERR_OE: Overrun error (no valid stop bit)
         DG_RESP: internally generated datagram containing protocol control byte
-        DG_SIDE: internally generated datagram indicating decoder orientation wrt to DCC signal
     """
     # class constants
 
@@ -150,8 +149,8 @@ class RailComRead:
     the original datagram or one of the 6 special values. Applicable to Ch1 & Ch2.
     N.B. the 6 special values are not valid for Ch1.
 
+    See RCN-217 2.5.
     """
-
 
 
     def __init__(self, cu_sm_num, rc_rx_pin, cb, channel = 1, cu_pin = None):
@@ -334,6 +333,7 @@ class RailComRead:
         wait(1, pin, 0)     [0]
         wrap()                 
 
+
     @rp2.asm_pio(
                  in_shiftdir = rp2.PIO.SHIFT_RIGHT,           # lsb first so shift right
                  out_shiftdir = rp2.PIO.SHIFT_RIGHT,
@@ -378,7 +378,7 @@ class RailComRead:
         # we want a confirmed start bit to be at least 3/4 bit time 
         # so we sample it 6 times following the initial edge
         set(y,5)                [0]       
-        wait(0, pin, 0)         [0] # wait for start bit leading edge
+        wait(0, pin, 0)         [1] # wait for start bit leading edge - 2 ticks between samples
         label("spin")
         jmp(pin,"await_start")  [0] #back to 0, not long enough for start bit
         jmp(y_dec, "spin")      [0] # spin for next sample
@@ -386,7 +386,7 @@ class RailComRead:
         label("start_ok")
         mov(osr, pins)          [0]  # get start bit and orientation (can't get orientation only!)
         out(y,1)                [0]  # shift out start bit  & discard leaving orientation
-        set(y, 7)               [9]  # count 8 bits and wait 2 ticks + 14 so far to end start bit + half bit
+        set(y, 7)               [7]  # 11 ticks in total from last sample to mid 1st bit.
 
         label("next_bit")
         in_(pins,1)             [0]  # read next bit into isr
@@ -462,6 +462,7 @@ class RailComRead:
         # buffer now translated - parsing for channel specific info done in callback
         self._callback(memoryview(self._rx_buff)[:x], detector_side)
         return
+
 
 if __name__ == '__main__':
     from dcc_cmd_pio import DCCGen 

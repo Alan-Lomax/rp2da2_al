@@ -26,6 +26,23 @@
 
 ---
 
+## Installation
+
+Copy the python (.py) files to the Pico using Thonny or similar. Don’t replicate the repository directory structure, just copy to the top level. Don’t bother with the \_\_init\_\_.py files.  These are purely documentary at the moment.
+
+There’s no ‘main.py’ yet and everything runs from a test harness at the end of dcc_command.py so load this into the Thonny editor window and ‘Run current script’ (green play button). It will auto-detect whether on a RP Pico or
+Arduino Nano RP2040 Connect and allocate the detector pins accordingly.
+
+The screen driver will object if it can’t find the OLED on the i2c bus. Most 0.91" OLEDs include i2c pull-ups so
+these should not be needed.  If OK you will get an invitation to type at the REPL, but the program will still be running in the background. The OLED display shows a ’splash’, immediately followed by the block status.
+
+You can enter DCC API commands at the REPL preceded by
+'dcc.'. E.g.:
+
+dcc.power(1)
+
+---
+
 ## DCC API
 
 ### Module dcc_command

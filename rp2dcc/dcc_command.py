@@ -46,7 +46,7 @@ two for RailCom. The two RailCom state machines must be on the same PIO block.
 
 
 from micropython import const
-from machine import Pin
+from machine import Pin, ADC
 from device import Device
 
 
@@ -101,9 +101,6 @@ class DCCCommand():
             enable_pn: Pin number to enable the DRV8874.
         """
 
- 
-        #self._dcc_gen = DCCGen(gen_sm_num, DCC_pn, sleep_pn, enable_pn)
-
         # The packet list is used for commands that are currently scheduled for 
         # transmission. Speed & function commands are never deleted but POM commands have
         # limitied life span 
@@ -117,7 +114,6 @@ class DCCCommand():
 
         self._active_address = set() # acive mobile decoders
 
-
         # Set up interrupt on enable pin to schedule next packet when 
         # cutout period ends.
         enable_pn.irq(self._nxt_packet, Pin.IRQ_RISING)
@@ -129,7 +125,6 @@ class DCCCommand():
         Start and stop command packet transmission scheduling.
         PIO stop start and power to track delegated to the DCC tx class (pio_pwr).
         
-
         args:
             p: 1 for power on, 0 for power off, None for get power status
 
@@ -154,8 +149,6 @@ class DCCCommand():
         return r
 
 
-        
-    
     def set_speed(self, address, dir, speed = 0):
         """Set Speed (including direction)
         
@@ -232,6 +225,7 @@ class DCCCommand():
 
         return True
     
+
     def read_cv(self, address, cv_num):
         """Read CV (POM)
         
@@ -250,7 +244,8 @@ class DCCCommand():
 
         if not (1 <= cv_num <= 1024):
             return False
-        return self._pom_cmd(CV_Access(address, cv_num - 1))
+        return self._pom_cmd(CV_Access(address, cv_num
+                                        - 1))
     
     def write_cv(self, address, cv_num, new_val):
         """Write CV (POM)
@@ -274,10 +269,7 @@ class DCCCommand():
             return False
         return self._pom_cmd(CV_Access(address, cv_num - 1, operation = 'w', value = new_val))
         
-
     
-
-
     def _get_cmd(self, key):
         """Get a command from the packet list
         
@@ -285,12 +277,14 @@ class DCCCommand():
         """
         return self._packet_list[key]
     
+
     def _add_cmd(self, command):
         """Add Command to Packet List"""
         type = command.get_type()
         addr = command.get_address()
         self._packet_list[(type, addr)] = command
         self._active_address.add(addr)
+
 
     def _pom_cmd(self, command):
         """Process Program on Main command
@@ -302,8 +296,6 @@ class DCCCommand():
         To ensure that there is a subsequent command the address is checked to see if in the active list.
         The command will be rejected if the address is not in the active list or
         there is a POM command already being processed.
-
-
 
         return:
             True if command accepted
@@ -317,6 +309,7 @@ class DCCCommand():
             return False
         self._pom_packet = command
         return True
+
 
     def _nxt_packet(self, _):
         """ Generate next packet - soft interrupt or timer callback.
@@ -369,23 +362,34 @@ class DCCCommand():
         return
 
 
-        
 
-
-
-
-    
 if __name__ == '__main__':
-    import _thread, time
+    import _thread, time, os
     from dcc_rc_ch1 import RComBlkDet
     from dcc_rc_ch2 import RComCmdRsp
 
     from screen import Screen
+
+    # DRV8874 pin allocations - common to Pico & Arduino Nano Connect
     enable_pin = Pin(18, Pin.OUT, value = 1)
-    sleep_pin = Pin(19, Pin.OUT, value = 0)
+    sleep_pin = Pin(19, Pin.OUT, value = 0)   # set sleep mode initially
     dcc_pin = Pin(20, Pin.OUT)
-    c2_rx_pin = Pin(15, Pin.IN)
-    c1_rx_pin = Pin(0, Pin.IN)
+    fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true
+    sense_pin = ADC(Pin(26)) # current sense input
+
+    machine = os.uname().machine # get machine description
+
+    if machine.find("Pico") > -1:
+        # Detector pin allocations - Raspberry Pi Pico format
+        c2_rx_pin = Pin(16, Pin.IN)
+        c1_rx_pin = Pin(14, Pin.IN)
+    elif machine.find("Nano") > -1:
+        # Detector pin allocations - Arduino Nano  format
+        c2_rx_pin = Pin(15, Pin.IN)
+        c1_rx_pin = Pin(0, Pin.IN)
+    else:
+        print (machine, "invalid")
+
 
     time_stamp = time.ticks_ms()
 
