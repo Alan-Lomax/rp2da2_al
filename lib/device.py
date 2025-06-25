@@ -80,17 +80,8 @@ class Device():
 
     _queue = deque((), MAX_Q_LEN, 1)
 
-    #timings = deque((),100)
-
-
-    
-
     _q_lock = _thread.allocate_lock()
 
-    
-
-
-    
     ## empty device table
     # will be added to by devices when instantiated.
     _device_table = {}
@@ -163,40 +154,7 @@ class Device():
 
         Returns:
             None or a tuple
-
-
-
-             
-
         """
-       
-        '''
-        try:
-            # see if anything there
-            Device._q_lock.acquire()
-            event = cls._queue.popleft()
-            Device._q_lock.release()
-            return(event)
-            
-        except IndexError:
-            Device._q_lock.release()
-            # queue empty
-            time.sleep_ms(1)
-        if not wait:
-            return None
-
-        
-        Device._q_lock.acquire()
-        while len(cls._queue) == 0:
-            Device._q_lock.release()
-            time.sleep_ms(1)
-            # cls._fido.feed()
-            Device._q_lock.acquire()
-        # queue no longer empty
-        event = cls._queue.popleft()
-        Device._q_lock.release()
-        return(event)
-        '''
        
         event = None
         while event is None:
@@ -210,8 +168,6 @@ class Device():
         return event
         
 
-
-
     def __init__(self, name, type):
         """Initialise Device
 
@@ -224,7 +180,6 @@ class Device():
             self:
             name: string containing the device name
             type: character specifying the type of device (i.e. class of child)
-        
         """
         
         self._name = name
@@ -293,15 +248,7 @@ class Device():
             event:  event code - system specific
             data:   event data to qualify code - device dependent  
             """
-        ''''
-        try:
-            Device._q_lock.acquire()
-            Device._queue.append((self, event, data))
-            Device._q_lock.release()
-        except IndexError:
-            Device._q_lock.release()
-            raise ThreadQError('Q full')'
-        '''
+
         with Device._q_lock:
             try:
                 Device._queue.append((self, event, data))
@@ -309,5 +256,3 @@ class Device():
             except IndexError:
                 pass
         raise ThreadQError('Q full')
-        
-        #Device.trace.append((self, time.ticks_ms(), event))

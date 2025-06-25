@@ -15,9 +15,6 @@ import time
 from framebuf import FrameBuffer, MONO_VLSB
 
 
-
-
-
 _OLED_WIDTH   = const(128)  #OLED width
 _OLED_HEIGHT  = const(32)  #OLED height
 _PAGE_HEIGHT = const(8)  # page height is same as font height 
@@ -34,7 +31,10 @@ class Page(FrameBuffer):
     """Display Page Class
     
     The display is organised into 4 pages.
-    It is based on the FrameBuffer class."""
+    It is based on the FrameBuffer class.
+    
+    If using the default Framebuffer text each page holds 1 line of text.
+    """
     def __init__(self):
         """Construct a page.
         
@@ -64,7 +64,18 @@ class Page(FrameBuffer):
 
 
 class OLED_0in91:
+    """0.91" OLED Display using SSD1306
+    
+    """
     def __init__(self, i2c):
+        """Construct the OLED driver
+        
+        Check to see if OLED is on I2C bus and initialise the SSD1306.
+        
+        args:
+            self:
+            i2c: I2C driver.
+            """
         #self.width = _OLED_WIDTH
         #self.height = _OLED_HEIGHT
         #Initialize DC RST pin

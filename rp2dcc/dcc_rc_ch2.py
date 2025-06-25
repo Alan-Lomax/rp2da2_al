@@ -86,16 +86,12 @@ class RComCmdRsp(Device):
 
             The RailCom reader will use two sequentially numbered GPIO pins for receiving - the first is supplied.
 
-        
-        
         Args:
             self:
             rc_sm_num: first state machine number to be used RailCom receiver functions.
             rx_pn:  First pin number for RailCom rx
             enable_pn: Pin number that enables the DRV8874 - it's only read here
         """
-
-
 
         self._rc = RailComRead(rc_sm_num,
                               rx_pn,  self._rail_com_ch2_msg, 2, enable_pn)
@@ -170,6 +166,10 @@ class RComCmdRsp(Device):
             self._log_error('nc')   # no command - possible software sync error
             return
         address = cmd.get_address()
+        if address == 255:
+            # broadcast address - reserved for RailCom Plus response 
+            # not used for RailCom
+            return
         if cmd.get_type() == CV_Access.TYPE:
             # maybe already there (second write) - quietly update or add
             # get the request cv number and command timeout and save
@@ -329,7 +329,3 @@ class RComCmdRsp(Device):
 
         # save the last received datagrams            
         self._rc_msg[addr] = (datagram)
-
-
-
-        

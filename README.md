@@ -6,17 +6,24 @@
 
 ## Software Modules
 
+### Utility & UI
+
 **device** - This provides the Device class, a base class for hardware device drivers and similar objects.
 
 **oled0_91** - Module for 0.91 inch OLED on i2c
 
 **screen** - This is the screen application module. It specifies the Screen class.
 
-**dcc_cmd_pio** - This module contains the class and functions for low level DCC Command Serialisation for use with RailCom detection.
+### DCC and RailCom
+
+These modules are dependent on RP2 series processor programable input/output peripherals (PIO) for DCC command
+serialisation and RailCom response processing.
+
+**dcc_command** - This module provides high level APIs. It and associated modules contain the functions and classes for DCC command station.
 
 **dcc_cmd_util** - This module contains classes for DCC command objects.
 
-**dcc_command** - This module provides high level APIs. It and associated modules contain the functions and classes for DCC command station.
+**dcc_cmd_pio** - This module contains the class and functions for low level DCC Command Serialisation for use with RailCom detection.
 
 **dcc_rc_ch1** - This module contains the functions and classes for DCC RailCom block detection on Channel 1.
 
@@ -28,10 +35,11 @@
 
 ## Installation
 
-Copy the python (.py) files to the Pico using Thonny or similar. Don’t replicate the repository directory structure, just copy to the top level. Don’t bother with the \_\_init\_\_.py files.  These are purely documentary at the moment.
+Copy the python (.py) files from the lib and rp2dcc directories to the Pico using Thonny or similar.
+Don’t replicate the repository directory structure, just copy to the top level. Don’t bother with the \_\_init\_\_.py files.  These are purely documentary at the moment.
 
 There’s no ‘main.py’ yet and everything runs from a test harness at the end of dcc_command.py so load this into the Thonny editor window and ‘Run current script’ (green play button). It will auto-detect whether on a RP Pico or
-Arduino Nano RP2040 Connect and allocate the detector pins accordingly.
+Arduino Nano RP2040 Connect and allocate the detector pins accordingly. It creates the DCCCommand object (named dcc).
 
 The screen driver will object if it can’t find the OLED on the i2c bus. Most 0.91" OLEDs include i2c pull-ups so
 these should not be needed.  If OK you will get an invitation to type at the REPL, but the program will still be running in the background. The OLED display shows a ’splash’, immediately followed by the block status.

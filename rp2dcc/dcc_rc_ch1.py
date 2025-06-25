@@ -143,7 +143,7 @@ class RComBlkDet(Device):
 
         Check to see if there's a load on the block.
         """
-        Device.check_core0()
+        #Device.check_core0()
         if self._enable_pin is None or self._enable_pin.value() == 1:
             # only check if we have power!
 

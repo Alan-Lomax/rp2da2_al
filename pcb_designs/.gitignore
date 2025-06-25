@@ -2,3 +2,4 @@
 *[Bb]ackups/
 **/[Gg]erbers/*.zip
 fp-info-cache
+**/*.lck

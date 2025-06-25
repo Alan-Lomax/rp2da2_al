@@ -82,8 +82,9 @@ class RailComRead:
     Each RailCom reader uses two PIO state machines.  One times the cutout and the second is the serial
     RailCom message receiver. Both state machines need to be on the same PIO for RP2040 and are assigned to
     consecutive state machine numbers. A PIO block has 4 state machines and can run two readers. The 
-    The cutout timers will be on the state machine numbers 0 & 2 of the block and the associated receivers on state machine
-    numbers 1 & 3.
+    The cutout timers will be on the state machine numbers 0 & 2 of the PIO block and the associated receivers on state machine
+    numbers 1 & 3. (Note that MicroPython numbers all state machines sequentially from 0 - e.g. it refers to the first 
+    state machine on the second PIO as no. 4.)
 
     The cutout state machine starts the RailCom receiver using an IRQ. Relative IRQ numbering 
     is used. The first is no 5 which will be used by sm 0. The sm 2 will use IRQ 7.
@@ -205,8 +206,8 @@ class RailComRead:
                           >> 7) - 1          
         """PIO restart instruction
 
-        This generates the PIO op code required to restart the rx state machine which must run in sm 5 or 7 corresponding
-        to PIO state machines 1 or 3.
+        This generates the PIO op code required to restart the rx state machine which must run in sm 5 or 7
+        corresponding to PIO state machines 1 or 3.
         
         Read the wrap address from the PIO exec control register and subtract 1
         for the first PIO instruction of state machine 5 or 7 (the rx program).
@@ -349,12 +350,12 @@ class RailComRead:
         been read by the application, which restarts the state machine.
 
         The first input pin is the 'or' of the two sides of the detector circuit. One side detects
-        +ve going RailCom pulses and the second -ve going pulses. This is inverted. Low indicates logic '1'
-        and vice versa.
+        +ve going RailCom pulses and the second -ve going pulses. A RailCom pulse indicates a logic '0',
+        the line idle (no RailCom current) is a logic '1'.
+        Low indicates logic '0' and vice versa.
         
         The second input pin is the first side.  This may be used to determine which side is
-        active, thus indicating which way the locomotive is facing relative to the track DCC. This is not
-        inverted.
+        active, thus indicating which way the locomotive is facing relative to the track DCC.
 
         The second pin may be NC or used for other purposes, in which case the indication of the
         active side will be indeterminate.
@@ -367,7 +368,7 @@ class RailComRead:
         state machine is restarted by the controlling application externally forcing execution
         of a jump to the first instruction.
 
-        16 instructions
+        17 instructions
         """
 
         wait(1, irq, rel(4))    [0] # wait to be enabled
@@ -378,18 +379,18 @@ class RailComRead:
         # we want a confirmed start bit to be at least 3/4 bit time 
         # so we sample it 6 times following the initial edge
         set(y,5)                [0]       
-        wait(0, pin, 0)         [1] # wait for start bit leading edge - 2 ticks between samples
+        wait(0, pin, 0)         [0] # wait for start bit leading edge - 2 ticks between samples
+        mov(osr, pins)          [0] # get start bit ('0') and orientation (can't get orientation only!)
         label("spin")
-        jmp(pin,"await_start")  [0] #back to 0, not long enough for start bit
+        jmp(pin,"await_start")  [0] # back to '1', not long enough for start bit
         jmp(y_dec, "spin")      [0] # spin for next sample
 
         label("start_ok")
-        mov(osr, pins)          [0]  # get start bit and orientation (can't get orientation only!)
-        out(y,1)                [0]  # shift out start bit  & discard leaving orientation
-        set(y, 7)               [7]  # 11 ticks in total from last sample to mid 1st bit.
+        out(y,1)                [0] # shift out start bit  & discard leaving orientation in osr
+        set(y, 7)               [8] # 11 ticks in total from last sample to mid 1st bit.
 
         label("next_bit")
-        in_(pins,1)             [0]  # read next bit into isr
+        in_(pins,1)             [0] # read next bit into isr
         jmp(y_dec,"next_bit")   [14] # wait 15 more ticks - 16 ticks in total  
         jmp(pin,"stop_ok")      [0] # if all data bits read check stop bit
         wait(1, pin, 0)         [0] # overrun error - wait for line idle
@@ -418,7 +419,7 @@ class RailComRead:
             self:
             _: state machine raising IRQ - discard
         """
-        Device.check_core0()
+        #Device.check_core0()
         # reset PIO back to first instruction to wait for next trigger.
         # N.B StateMachine.restart() resets everything but the program counter.
         # although documentation and code suggests it should reset it
@@ -444,7 +445,7 @@ class RailComRead:
             # quietly truncate the buffer
             raw_buff = raw_buff[:max_buf]
         # the raw buffer is in words - bits 0 - 7 data byte as received
-        # bit 8 (the side bit) is ignored on all but first byte
+        # bit 8 (the orientation bit) is ignored on all but first byte
         # character overrun error is reported as all '1's
         x = 0
         for rxd in raw_buff:

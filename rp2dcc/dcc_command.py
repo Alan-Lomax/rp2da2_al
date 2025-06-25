@@ -20,7 +20,7 @@ RCN-210 &  RCN-211 partly apply as appropriate.
 
 See also NMRA Standards S 9.2 and S 9.2.1. S 9.2.1.1 is not supported.
 
-The module makes full use of a RP2xx0 PIO for DCC signal encoding and serialisation. If RailCom is enabled
+The module makes full use of a RP2xxx PIO for DCC signal encoding and serialisation. If RailCom is enabled
 a second PIO is used for this. 
 
 The DCC commands are serialised to the track via the DCC generation driver, which also inserts
@@ -244,8 +244,7 @@ class DCCCommand():
 
         if not (1 <= cv_num <= 1024):
             return False
-        return self._pom_cmd(CV_Access(address, cv_num
-                                        - 1))
+        return self._pom_cmd(CV_Access(address, cv_num - 1))
     
     def write_cv(self, address, cv_num, new_val):
         """Write CV (POM)
@@ -327,7 +326,7 @@ class DCCCommand():
         
         This function instructs the next Command object in the list to send its command.
         """
-        Device.check_core0()
+        #Device.check_core0()
         if self._dcc_gen_pio.pio_pwr() == DCCCmdTx.OFF:
             # power now off - don't transmit.
             return
@@ -377,18 +376,24 @@ if __name__ == '__main__':
     fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true
     sense_pin = ADC(Pin(26)) # current sense input
 
-    machine = os.uname().machine # get machine description
+    machine_descrip = os.uname().machine # get machine description
 
-    if machine.find("Pico") > -1:
+    if machine_descrip.find("Pico") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
-        c2_rx_pin = Pin(16, Pin.IN)
+        # orientation pins are initiated but not specifically allocated
         c1_rx_pin = Pin(14, Pin.IN)
-    elif machine.find("Nano") > -1:
+        _ = Pin(15, Pin.IN)
+        c2_rx_pin = Pin(16, Pin.IN)
+        _ = Pin(17, Pin.IN)
+    elif machine_descrip.find("Nano") > -1:
         # Detector pin allocations - Arduino Nano  format
-        c2_rx_pin = Pin(15, Pin.IN)
+        # orientation pins are initiated but not specifically allocated
         c1_rx_pin = Pin(0, Pin.IN)
+        _ = Pin(1, Pin.IN)
+        c2_rx_pin = Pin(15, Pin.IN)
+        _ = Pin(16, Pin.IN)
     else:
-        print (machine, "invalid")
+        print (machine_descrip, "invalid")
 
 
     time_stamp = time.ticks_ms()
