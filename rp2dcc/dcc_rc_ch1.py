@@ -65,7 +65,7 @@ class RComBlkDet(Device):
     BLK_OCC   = const(22)   # Block occupied - Load detected but no info
    
 
-    def __init__(self, rc_sm_num, rx_pin, enable_pin = None):
+    def __init__(self, blk_name, rc_sm_num, rx_pin, enable_pin = None):
         """Construct the RailCom block detector
         
         This constructs the RailCom block detector. This reads channel 1. It instatiates a RailCom reader using
@@ -82,6 +82,7 @@ class RComBlkDet(Device):
 
         args:
             self:
+            blk_name: the name of the block
             rc_sm_num:  the first state machine number.
             rx_pin: the first receiver pin.
             enable_pin: the pin as used by the DCC generator to assert the RailCom cutout (optional).
@@ -98,7 +99,7 @@ class RComBlkDet(Device):
         self._load_timer = Timer(mode = Timer.ONE_SHOT, period = _FIRST_TIMER_PERIOD, callback = self._load_check)
         self._errors = {} # Error counts by type
         self._dgs = set() # Datagrams seen
-        super().__init__('b001', 'b')
+        super().__init__(blk_name, 'b')
 
 
     def get_error_counts(self):

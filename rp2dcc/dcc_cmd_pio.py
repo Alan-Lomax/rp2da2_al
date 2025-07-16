@@ -21,7 +21,8 @@ The DCC signal is a series of '1' & '0' bits.  Each bit is encoded
 into a complete DCC output cycle.  The half cycle length for a '1' is 58us, a '0' is 100us.
 The PIO FIFO buffer is 32 bits wide - 1 word.  The RX FIFO is 
 not used so is joined to the TX FIFO.  This gives a total FIFO of 8 words. 7 words max are required for
-a normal DCC command packets.
+a normal DCC command packets. The DCC output pin is set high for the first half cycle of a bit and low for
+second half cycle.
 
 If the FIFO is empty, the PIO doesn't stall but continues outputing '0' bits until the FIFO is 
 loaded with a new command.

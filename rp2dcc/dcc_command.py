@@ -398,7 +398,7 @@ if __name__ == '__main__':
 
     time_stamp = time.ticks_ms()
 
-    rc_ch1 = RComBlkDet(4, c1_rx_pin, enable_pin)
+    #rc_ch1 = RComBlkDet('b001', 4, c1_rx_pin, enable_pin)
 
     rc_ch2 = RComCmdRsp(6, c2_rx_pin, enable_pin)
     

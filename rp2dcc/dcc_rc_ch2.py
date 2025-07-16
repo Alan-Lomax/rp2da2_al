@@ -24,8 +24,6 @@ from dcc_cmd_util import CommandPacket, CV_Access
 from device import Device
 
 
-
-
 _DG2_LEN = {0:1, 1:1, 2:1, 3:5, 4:5, 7:2, 8:5, 9:5, 10:5, 11:5, 12:5, 13:5, 14:1}
 """ Channel 2 Datagram Length
 
@@ -34,8 +32,6 @@ differs, but no plans to support them yet.
 
 Indexed by datagram id, contains the additional number of 6 bit groups to be concatenated.
 """
-
-
 
 
 class RComCmdRsp(Device):
@@ -99,6 +95,7 @@ class RComCmdRsp(Device):
         self._rc_msg = {}   # most recently received message by address
         self._speed = {}    # dynamic speed by address 
         self._recep_stats = {}  # decoder reported reception stats by address
+        self._dyn_info = {} # other dynamic info
         self._pom_acc = {}   # outstanding cv accesss requests by command type/address
 
 
@@ -216,11 +213,13 @@ class RComCmdRsp(Device):
                 # StopIteration will end the loop
                 b = next(buff_iter)
                 if b == RailComRead.ERR_LU:
+                    # Hamming weight error
                     # no point in going any further - as structure of
                     # remaining message indeterminate
                     self._log_error('h4')
                     return datagram
                 if b == RailComRead.ERR_OE:
+                    # Over run error
                     # no point in going any further - and
                     # don't bother logging - this is most likely switching noise after end of window
                     return datagram
@@ -231,15 +230,11 @@ class RComCmdRsp(Device):
                     # as ACK may be used as filler
                     if b not in pb_set:
                         # first time seen - ignore repeats
-                        #if b == RailComRead.NAK and RailComRead.ACK in pb_set:
-                            # ack + nak indicates CV error!
-                        #    datagram.append((RailComRead.DG_RESP, RailComRead.CV_ERR))
-                        #else:
                         datagram.append((RailComRead.DG_RESP, b))
                         self._dgs.add(RailComRead.DG_RESP)
                         pb_set.add(b)
                 else:
-                # separate the datagram id and first 2 bits of payload
+                    # separate the datagram id and first 2 bits of payload
                     dg_id = (b & 0xFC)  >> 2
                     dg_payload = b & 0x03
                     try:
@@ -284,9 +279,6 @@ class RComCmdRsp(Device):
                 # other earlier datagrams in same message will be processed
                 self._log_error('df')
 
-        # create dg for side if set - this isn't really relevant to Ch2 
-        # maybe remove
-        # datagram.append((RailComRead.DG_SIDE, d_side))
         return datagram
 
     def _act_on_datagram(self, datagram, addr):
@@ -307,7 +299,8 @@ class RComCmdRsp(Device):
                 elif dyn_si == RComCmdRsp.DYN_RECEP_STATS:
                     self._recep_stats[addr] = value
                 else:
-                    pass # other dynamics ignored at present
+                    # keep record of other dynamics
+                    self._dyn_info[addr, dyn_si] = value
             elif id == RComCmdRsp.DG_POM:
                 # POM cv response RCN219 5.1
                 # payload is cv value from last POM command
