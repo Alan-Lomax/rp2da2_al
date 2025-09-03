@@ -34,9 +34,8 @@ The time between packets addressed to the same decoder must exceed 5ms. This is 
 end bit and the following packet start bit.
 
 The period between complete packet transmission (start bit to start bit) must be less or equal to
-30ms."""
-
-
+30ms.
+"""
 _DCC_PREAMBLE =  const(0x0003FFFF)  # DCC preamble - 18 '1' bits (minumum 14 bits)
 _DCC_PE1_CU =    const(0xC00001FF)  # packet end '1' bit & cutout (if used)
 
@@ -44,12 +43,9 @@ _SPD_128 = const(0x3f)              # 1st instruction byte for 128 speed packet
 _F_GROUP_1 = const(0x80)            # instruction byte for Function group 1
 _F_NUM_ENCODE = [0x10, 0x01, 0x02, 0x04, 0x08] # translate Group 1 function no. to mask
 
-
 _IDLE_PACKET = bytes(b'\xff\x00')  # Address 255, instruction/data 0
 
 
-
- 
 class CommandPacket:
     """ DCC Commmand
     
@@ -125,7 +121,6 @@ class CommandPacket:
         """
         cls._counts = {}
 
-
     def __init__(self, byte_list = None):
         """ Contruct the DCC Command
 
@@ -142,14 +137,12 @@ class CommandPacket:
         POM commands are built as empty templates without a byte list.
 
         args:
-            self:
             byte_list: a list of the component bytes.
         """
         if CommandPacket._state_machine is None:
             # first instantiation - get the DCC generation state machine
             # the DCC generator must be instantiated first!
             CommandPacket._state_machine = DCCCmdTx.get_state_machine()
-
 
         # max buffer is 8 words - 2 (pre-amb + pe) - 1 byte (chksum) => command 11 bytes
 
@@ -165,7 +158,6 @@ class CommandPacket:
             self._packet_buff = array.array('I', range(buff_len))
             self.set_buffer(byte_list)
 
-
     def set_buffer(self, byte_list):
         """Set buffer contents
 
@@ -180,9 +172,7 @@ class CommandPacket:
         We build the buffer here in 'slow time' rather than in timer ISR 'critical time'.
 
         args:
-            self:
             byte_list: a list of the component bytes.
-
         """
         magic_no = machine.disable_irq()
         self._packet_buff[0] = 0 # flag buffer being updated to stop timer ISR sending it
@@ -212,15 +202,9 @@ class CommandPacket:
         
         This sends the command by transferring it to the PIO state machine FIFO.
 
-        
-        
-        args:
-            self:
-
         returns:
             sent or not sent 
-            
-            """
+        """
         # 'soft' service routine here so 'inline' code preempted
         if self._packet_buff[0] == _DCC_PREAMBLE:
             # OK to send
@@ -239,9 +223,6 @@ class CommandPacket:
         
         This returns the command type.  The type is set by the class object inheriting from 
         CommandPacket
-        
-        args:
-            self:
             
         returns:
             command type
@@ -253,16 +234,14 @@ class CommandPacket:
         """ Get Address
         
         This returns the decoder address targeted by the command
-        
-        args:
-            self:
-            
+
         returns:
             The decoder address as an integer
         """
         
         return self._address
-    
+
+
 class IdlePacket(CommandPacket):
     """ DCC Idle Packet 
     
@@ -273,16 +252,11 @@ class IdlePacket(CommandPacket):
     """
     TYPE = 'I'
     
-
     def __init__(self):
         """Construct the Idle Packet
 
         This constructs the Idle Packet. It calls __init__ in the base class. It sets
         the type and address. The address is the DCC broadcast address.
-
-        args:
-            self:
-        
         """
         super().__init__(_IDLE_PACKET)
         self._type = IdlePacket.TYPE
@@ -299,10 +273,7 @@ class SpeedCommand(CommandPacket):
     attributes:
         TYPE:   S - Speed Command Packet
     """
-
     TYPE = 'S'
-
-
 
     def __init__(self, address, dir, speed):
         """Construct a  speed command
@@ -313,11 +284,9 @@ class SpeedCommand(CommandPacket):
             Parameters not validated here.
 
         args:
-            self:
             address: DCC address of target decoder
             dir:    Direction (1:forward  or 0:reverse)
             speed:  Speed
-        
         """
         inst_2 = (0x80 if dir == 1 else 0) | (speed & 0x7f)
         self._type = SpeedCommand.TYPE
@@ -342,10 +311,8 @@ class SpeedCommand(CommandPacket):
             Parameters not validated here.
 
         args:
-            self:
             dir:    New direction (forward or reverse)
             speed:  New speed
-        
         """
         # update last byte with new dir/speed 
         self._byte_list[-1] = (0x80 if dir == 1 else 0) | (speed & 0x7f)
@@ -359,11 +326,9 @@ class FGrp1Command(CommandPacket):
     periodic transmission.  The function number and state may be updated.
     
     Attributes:
-        TYPE:   F - Function Group 1 Command"""
-
+        TYPE:   F - Function Group 1 Command
+    """
     TYPE = 'F'
-
-   
 
     def __init__(self, address, f_num, state):
         """Construct a  Function Group 1 Command
@@ -380,7 +345,6 @@ class FGrp1Command(CommandPacket):
             address: DCC address of target decoder
             f_num:   The group 1 function number to be set or unset
             state:  may be set or unset (1 or 0)
-        
         """
         self._address = address
         self._type = FGrp1Command.TYPE
@@ -402,10 +366,8 @@ class FGrp1Command(CommandPacket):
         Allows a function number in group 1 to be set or unset.
 
         args:
-            self:
             f_num:   The group 1 function number to be set or unset
             state:  may be set or unset (1 or 0)
-        
         """
         mask = _F_NUM_ENCODE[f_num]
         # get current intruction byte (it's at the end)
@@ -413,6 +375,7 @@ class FGrp1Command(CommandPacket):
         # set or clear function bit
         self._byte_list[-1] = (inst_1 | mask) if state == 1 else  (inst_1 &  ~mask)
         self.set_buffer(self._byte_list)
+
 
 class CV_Access(CommandPacket):
     """CV access - POM
@@ -443,7 +406,6 @@ class CV_Access(CommandPacket):
         BIT_CHK: CV BIT Check
 
         TYPE:   P - Programme on Main
-
     """
     BYTE_CHK = const(0xe4)  # As specified in RCN-217 for read cv byte
     BYTE_WRT = const(0xec)  # As specified in RCN-217 for write cv byte
@@ -458,8 +420,6 @@ class CV_Access(CommandPacket):
     _CMD = {'r': BYTE_CHK,
             'w': BYTE_WRT}
 
-
-
     def __init__(self, address, cv, *, operation = 'r', value = 0):
         """Construct a  Programme on Main Command
 
@@ -471,12 +431,10 @@ class CV_Access(CommandPacket):
             Parameters not validated here.
 
         args:
-            self:
             address: DCC address of target decoder
             cv: CV number to read or write
             operation: read(r) or write(w)
             value:  new value for CV
-        
         """        
         self._address = address
         self._type = CV_Access.TYPE
@@ -508,9 +466,6 @@ class CV_Access(CommandPacket):
         but Train-O-Matic decoders seem to need the read command to be sent twice
         as for a write.
 
-        args:
-            self:
-
         returns:
             Result of attempted send.  SENT, NOT_SENT or SENT_POM 
         """
@@ -533,10 +488,7 @@ class CV_Access(CommandPacket):
 
         todo:
             Confirm that this is required. 
-        
-        args:
-            self:
-            
+
         returns:
             The send state of the command
         """
@@ -550,10 +502,6 @@ class CV_Access(CommandPacket):
         allow the  Channel 2 response processor to determine which CV a returned 
         CV value relates to. 
 
-        
-        args:
-            self:
-            
         returns:
             The CV numver being accessed.
         """

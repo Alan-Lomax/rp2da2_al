@@ -27,7 +27,7 @@ It also uses the dcc_command, dcc_rc_ch2, neoled, screen, mqtt_cmd, mqtt, mqtt_c
 
 """
 # python imports
-import _thread, os, network
+import _thread, sys, network
 
 # micropython imports 
 from micropython import const
@@ -41,7 +41,7 @@ from screen import Screen
 # DCC and RailCom imports
 from dcc_command import DCCCommand
 from dcc_rc_ch2 import RComCmdRsp
-from dcc_mon import DCCMon
+from trk_mon import TrkMon
 
 # MQTT imports
 from mqtt_cmd import Power, Cab
@@ -81,19 +81,19 @@ def main():
     DCC_STATE_MC = const(0) #DCC generation - First state machine on PIO 0
     RC2_STATE_MC = const(6) # RailCom Global detector state machine - 3rd on PIO 1
     
-    machine_descrip = os.uname().machine # get machine description
-    if machine_descrip.find("Pico") > -1:
+    build = sys.implementation._build # get build description
+    if build.find("PICO") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
         # orientation pins are initiated but not specifically allocated
         c2_rx_pin = Pin(16, Pin.IN)
         _ = Pin(17, Pin.IN)
-    elif machine_descrip.find("Nano") > -1:
+    elif build.find("NANO") > -1:
         # Detector pin allocations - Arduino Nano  format
         # orientation pins are initiated but not specifically allocated
         c2_rx_pin = Pin(15, Pin.IN)
         _ = Pin(16, Pin.IN)
     else:
-        print (machine_descrip, "invalid")
+        print (build, "invalid")
 
     DCCCommand(dcc_pin, sleep_pin, DCC_STATE_MC, enable_pin)
 
@@ -119,23 +119,24 @@ def main1():
     It also enters a loop to read event reports and update the screen and NeoString accordingly."""
     s = Screen().get_instance()
     np = NeoString(Pin(22),2)
-    dcc_mon = DCCMon(sleep_pin, enable_pin, fault_pin, sense_pin)
+    trk_mon = TrkMon(sleep_pin, enable_pin, fault_pin, sense_pin)
     s.show_screen(screen_splash())
     
     
     while True:
-        report = Device.get_event_report() # wait until event received
-        s.show_event(report)
-        np.show_event(report)
-        dcc_mon.scan()
+        report = Device.get_event_report(False) # return immediately
+        if report is not None:
+            s.show_event(report)
+            np.show_event(report)
+        trk_mon.scan()
 
 
 if __name__ == '__main__':
     # DRV8874 pin allocations - common to Pico & Arduino Nano Connect
-    enable_pin = Pin(18, Pin.OUT, value = 1)
     sleep_pin = Pin(19, Pin.OUT, value = 0)   # set sleep mode initially
+    enable_pin = Pin(18, Pin.OUT, value = 1)
     dcc_pin = Pin(20, Pin.OUT)
-    fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true
+    fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true - DRV8874 Open Drain OP
     sense_pin = ADC(Pin(26)) # current sense input
     _thread.start_new_thread(main1,())
     main()

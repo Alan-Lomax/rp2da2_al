@@ -1,10 +1,13 @@
-"""RP2 layout device main.py
+"""RP2 local detector main.py
 
 :author: Paul Redhead
 
 This is the main entry point for the RP2 application running a layout distributed pico. 
 It starts the MQTT client and the RailCom block detector objects on the first core.
 It also starts the screen and NeoString objects on the second core.
+
+All interrupt service routines and timer callbacks run on core 0.  No pre-emptive code
+runs on core 1.
 
 It is designed to run on the Raspberry Pi Pico or Arduino Nano RP2040 Connect.
 It uses the micropython, machine, and mqtt libraries.
@@ -27,33 +30,33 @@ It also uses the dcc_rc_ch1, neoled, screen, mqtt_cmd, mqtt, mqtt_client, and de
 
 """
 # python imports
-import _thread, os, network
+import _thread, sys, network, gc, time
 
 # micropython imports 
-from micropython import const
+from micropython import const,alloc_emergency_exception_buf
 from machine import Pin
 
 # lib imports
 from device import Device
-from led import NeoString
 from screen import Screen
-from point import MPPoint, MPPointDriver
 
 # DCC and RailCom imports
 from dcc_rc_ch1 import RComBlkDet
 
-
 # MQTT imports
-from mqtt import Will, Block, RComBlkDet, TO
+from mqtt import Will, Block, RComBlkDet
 from mqtt_client import MQTTClient
 
 from wifi import WiFi
+
+alloc_emergency_exception_buf(100)
 
 
 def screen_splash():
     """Create screen splash.
     
-    It's done here to avoid unnessesary imports in screen modules."""
+    It's done here to avoid unnessesary imports in screen modules.
+    """
     hostname = network.hostname()
     ssid = WiFi.get_instance().get_ssid()
     t0 = (0, '  DCC ', 0)
@@ -76,22 +79,19 @@ def main():
     It also sets up the DCC command and RailCom command response objects.
     The main loop reads the MQTT client and publishes the power state if it has changed.
     """
-
-
     RC1A_STATE_MC = const(0) #RailCom Block A (channel 1) detector state machine number
 
     RC1B_STATE_MC = const(2) #RailCom Block B (channel 1) detector state machine number
     
-
-    machine_descrip = os.uname().machine # get machine description
-    if machine_descrip.find("Pico") > -1:
+    build = sys.implementation._build # get build details
+    if build.find("PICO") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
         # orientation pins are initiated but not specifically allocated
         c1a_rx_pin = Pin(14, Pin.IN)
         _ = Pin(15, Pin.IN)
         c1b_rx_pin = Pin(16, Pin.IN)
         _ = Pin(17, Pin.IN)
-    elif machine_descrip.find("Nano") > -1:
+    elif build.find("NANO") > -1:
         # Detector pin allocations - Arduino Nano  format
         # orientation pins are initiated but not specifically allocated
         c1a_rx_pin = Pin(0, Pin.IN)
@@ -99,18 +99,17 @@ def main():
         c1b_rx_pin = Pin(15, Pin.IN)
         _ = Pin(16, Pin.IN)
     else:
-        print (machine_descrip, "invalid")
+        print (build, "invalid")
 
+    mc = MQTTClient.get_instance()
 
     # List of MQTT agents to be started.
     MQTT_LIST = [Block(RComBlkDet('1011', RC1A_STATE_MC, c1a_rx_pin)),
                 Block(RComBlkDet('1012', RC1B_STATE_MC, c1b_rx_pin)),
-                TO(MPPoint('1001', 0)),
-
                 Will("track/state", MQTTClient.QoS1)]
-
-    mc = MQTTClient.get_instance()
+    
     mc.start(MQTT_LIST)
+
     while True:
         mc.read_poll()
         for agent in MQTT_LIST:
@@ -121,19 +120,15 @@ def main1():
     """ Main function for the RP2 second core (core 1) application.
     
     This function sets up the screen and NeoString objects.
-    It also enters a loop to read event reports and update the screen and NeoString accordingly."""
+    It also enters a loop to read event reports and update the screen and NeoString accordingly.
+    """
     s = Screen().get_instance()
     #np = NeoString(Pin(22),2)
     s.show_screen(screen_splash())
 
-    pd = MPPointDriver.get_instance()
-    
-    
     while True:
         report = Device.get_event_report() # wait until event received
         s.show_event(report)
-        pd.set_to(report)
-        #np.show_event(report)
 
 
 if __name__ == '__main__':

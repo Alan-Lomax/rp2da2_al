@@ -23,13 +23,13 @@ The Arduino LED is driven by GPIO Pins on the wireless radio module rather than 
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """
 
 from machine import Pin
 from micropython import const
 from neopixel import NeoPixel
 from device import Device
+
 
 class Led:
     """Base class for LED control  
@@ -101,9 +101,7 @@ class TriLed(Led):
         """
         if (TriLed._tri_led) != None and (TriLed._tri_led is not self):
             raise RuntimeError('only one instance allowed')
-        
 
-        
     def set(self, colour, value = 1):
         """Set the colour of the LED
 
@@ -133,7 +131,6 @@ class TriLed(Led):
             pass
 
 
-
 class NeoLed(Led):
     """ NeoPixel Led
     
@@ -147,9 +144,6 @@ class NeoLed(Led):
 
     DEFAULT_B = const(50) # full brightness is rather bright!
 
-
-
-    
     def __init__(self, led_string, string_index):
         """Initialise the NeoPixel class
 
@@ -166,9 +160,6 @@ class NeoLed(Led):
         self._i = string_index
         self.set_rgb(tuple(self._rgb))
 
-
-
-        
     def set(self, colour, val = DEFAULT_B):
         """Set the colour of the LED
 
@@ -226,8 +217,6 @@ class NeoString(NeoPixel):
 
     _this_string = None
 
-
-
     @classmethod
     def get_instance(cls):
         """Return the singleton instance
@@ -239,7 +228,6 @@ class NeoString(NeoPixel):
         """
         return cls._this_string
 
-
     def __init__(self, pin, ps_len):
         """Initialise the NeoPixel string
         
@@ -247,7 +235,8 @@ class NeoString(NeoPixel):
         If the singleton already exists then an exception is raised.
         args:
             pin: The GPIO pin to which the NeoPixel string is connected.
-            len: The length of the NeoPixel string."""
+            ps_len: The length of the NeoPixel string.
+        """
         if NeoString._this_string is None:
             NeoString._this_string = self
         else:
@@ -283,7 +272,6 @@ class NeoString(NeoPixel):
             report: a tuple containing the reference to the source object, the unique event code see: display
                 and additional information - format and content event specific
         """
-    
         event = report[1]   # extract the event from the report
         try:
             led_num = self._event_decode[event]
@@ -293,12 +281,9 @@ class NeoString(NeoPixel):
             except IndexError:
                 pass
                 
-
         except KeyError:
             # unrecognised event - ignore
             pass
-
-
 
     _event_decode =    {Device.MC_SET_LED:(Led.COMMS_LED),
                         Device.WF_SET_LED:(Led.COMMS_LED)}

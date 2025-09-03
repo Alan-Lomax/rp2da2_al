@@ -51,6 +51,9 @@ class WiFi(Device):
     The connection is checked every 5 seconds and if the connection is lost, it will attempt to reconnect.
     The LED is set to red when not connected and cleared when connected.
     The LED is controlled by the TriLed class.
+
+    Attributes:
+        DEVICE_TYPE: Wi-Fi device identifier.
     """
 
     _wi_fi = None  # will be set on intantiation
@@ -107,31 +110,43 @@ class WiFi(Device):
     def report_event(self, event, data):
         """Report an event
 
-        This reports an event to the device. If the event is a WiFi connection event, it will """
+        This reports an event, overriding the Device version, so that the on board led is used
+        if on an Arduino RP2040 Connect.
+        """
         if self._tri_led is None:
             return super().report_event(event, data)
         else:
             # set the led here.
             self._tri_led.set(data[0], data[1])
-
-    
-    
+ 
     def isconnected(self):
         """Check if the WiFi is connected
 
+        A wrapper for the standard MicroPython network class method.
         """
         return self._wlan.isconnected()
     
     def get_ssid(self):
+        """Get the SSID
+        
+        returns:
+            ssid
+        """
         return(self._credentials[0])
-
 
     def _check_OK(self, _):
         """Check if the WiFi is connected
 
-        This checks if the WiFi is connected. If it is newly connected, the LED is cleared.
+        This timer callback checks if the WiFi is connected. If it is newly connected, the LED is cleared.
         If it is not connected, the LED is set to red and the connection is attempted.
         If the connection is not established, the active state of the WiFi is toggled to force a reconnect.
+        
+        TODO: wifi connect blocks - consider refactoring so not in timer callback.
+
+        args:
+            self:
+            _: timer id (ignored)
+            
         """
         if self._wlan.isconnected() and self._connected:
             return  # nothing to do

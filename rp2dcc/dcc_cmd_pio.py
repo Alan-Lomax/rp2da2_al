@@ -1,8 +1,6 @@
 """DCC Command Serialisation PIO module
     :author: Paul Redhead
 
-
-
 This module contains the class and functions for low level DCC Command Serialisation for use with RailCom detection.
 
 An RP2040 Peripheral Input Output (PIO) block is used to generate the DCC signal. A 'booster'
@@ -144,7 +142,6 @@ class DCCCmdTx:
         block.
         
         Args:
-            self:
             sm_num: PIO state machine number to be used.
             DCC_pn: Pin allocated for DCC output.
             sleep_pn: Pin allocated to the booster for powering the track
@@ -158,8 +155,7 @@ class DCCCmdTx:
         # set up the PIO state machine for DCC serialisation
         self._sm = rp2.StateMachine(sm_num, self._dcc_tx, freq = _PIO_FREQ,
                                     out_base = cu_pn,
-                                    set_base = DCC_pn
-                                    )                    
+                                    set_base = DCC_pn)                    
         self._sleep_pin = sleep_pn
         
     @rp2.asm_pio(out_init = rp2.PIO.OUT_HIGH,
@@ -187,7 +183,6 @@ class DCCCmdTx:
         As this is output only we can use the Input Shift Register (ISR/isr) as an additional store.
 
         TODO There needs to be an option to allow for generation of DCC without the RailCom cutout.
-        
         """
     
         wrap_target()
@@ -306,13 +301,11 @@ class DCCCmdTx:
             - assert the booster sleep pin (0 for True)
             - stop the state machine
 
-
         args:
             p: 1 for power on, 0 for power off, None for get power status
 
         returns:
             power status as held by the power pin
-
         """
         if (p is None):
             return self._sleep_pin()

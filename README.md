@@ -12,8 +12,9 @@ Model Railway Distributed Automation for RP2 (and other MicropPython MCUs).
 
 **oled0_91** - Module for 0.91 inch OLED on i2c
 
-**led** - Module to drive ws2812 LEDs or similar.  A string of 2 LEDs is supported.  The first LED displays the backend communications state, the second
-displays the track status.
+**led** - Module to drive ws2812 LEDs or similar.  A string of 2 LEDs is supported.
+The first LED displays the backend communications state, the second
+displays the command station track status.
 
 **screen** - This is the screen application module. It specifies the Screen class.
 
@@ -25,28 +26,32 @@ displays the track status.
 with JMRI but JMRI MQTT specifications will need to be changed from the default. Initially we support
 cabs, power and blocks.  Blocks have combined occupancy sensor and reporter.
 
-**wifi** - This acts as wrapper for the standard micropython network/wi-fi functions.
+**wifi** - This acts as wrapper for the standard MicroPython network/Wi-Fi functions.
 
 ### DCC and RailCom
 
-These modules are dependent on RP2 series processor programable input/output peripherals (PIO) for DCC command
-serialisation and RailCom response processing.
+These modules are dependent on RP2 series processor programable input/output peripherals (PIO)
+for DCC command serialisation and RailCom response processing.
 
-**dcc_command** - This module provides high level APIs. It and associated modules contain the functions and classes for DCC command station.
+**dcc_command** - This module provides high level APIs. It and associated modules contain
+the functions and classes for DCC command station.
 
 **dcc_cmd_util** - This module contains classes for DCC command objects.
 
-**dcc_cmd_pio** - This module contains the class and functions for low level DCC Command Serialisation for use with RailCom detection.
+**dcc_cmd_pio** - This module contains the class and functions for low level
+DCC Command Serialisation for use with RailCom detection.
 
-**dcc_rc_ch1** - This module contains the functions and classes for DCC RailCom block detection on Channel 1.
+**dcc_rc_ch1** - This module contains the functions and classes for DCC RailCom
+block detection on Channel 1.
 
-**dcc_rc_ch2** - This module contains the functions and classes for DCC RailCom DCC command mobile responses on Channel 2.
+**dcc_rc_ch2** - This module contains the functions and classes for DCC RailCom command station
+ mobile responses on Channel 2.
 
 **dcc_rc_pio**  - This module contains the functions and classes for low level RailCom datagram reading.
 It's applicable for block occupancy detection on Channel 1 and central dcc command decoder responses
 on Channel 2.
 
-**dcc_mon** - This module monitors the DCC track status by looking at the DRV8874
+**trk_mon** - This module monitors the booster and track status by looking at the DRV8874
 fault pin and current sense pin.
 
 ---
@@ -66,7 +71,8 @@ The config file specifies:
 - Network country code
 - SSID - your Wi-Fi network name
 - password - the network password
-- host name - the name to be used by local machine. This needs to be changed from the MicroPython default to avoid duplicates.
+- host name - the name to be used by local machine. This needs to be changed
+from the MicroPython default to avoid duplicates.
 
 ### MQTT
 
@@ -84,36 +90,45 @@ The config file specifies:
 
 Copy the python (.py) files from the lib and rp2dcc directories to the Pico using Thonny or similar.
 Don’t replicate the repository directory structure, just copy to the top level or if you want to be tidier
-you can copy the .py files to the lib directory. Don’t bother with the \_\_init\_\_.py  files.  These are purely documentary at the moment.
+you can copy the .py files to the lib directory. Don’t bother with the \_\_init\_\_.py  files.
+These are purely documentary at the moment.
 Also ignore the test directory.
 
-The screen driver will object if it can’t find the OLED on the i2c bus. Most 0.91" OLEDs include i2c pull-ups so
-these should not be needed.
+The screen driver will object if it can’t find the OLED on the i2c bus.
+Most 0.91" OLEDs include i2c pull-ups so these should not be needed.
 
 ### Command Station
 
-The main.py in the command directory is the command station version. It provides MQTT connectivity
-allowing the command station to be controlled from JMRI or similar. Copy this main.py from the command directory to the top level directory on the target device.
-
-Alternatively there is a test harness test_dcccmd.py in the test directory. This may be run using Thonny. Load this into the Thonny editor window and ‘Run current script’ (green play button). It will auto-detect whether on a RP Pico or
+The main.py in the examples/command directory is a command station version. It provides MQTT connectivity
+allowing the command station to be controlled from JMRI or similar.
+Copy this main.py from the command directory to the top level directory on the target device.
+Alternatively there is a test harness test_dcccmd.py in the test directory.
+This may be run using Thonny. Load this into the Thonny editor window and ‘Run current script’
+(green play button). It will auto-detect whether on a RP Pico or
 Arduino Nano RP2040 Connect and allocate the detector pins accordingly.
 It creates the DCCCommand object (named dcc).
 
-If OK you will get an invitation to type at the REPL, but the program will still be running in the background. The OLED display shows a ’splash’.
+If OK you will get an invitation to type at the REPL, but the program will still be
+running in the background. The OLED display shows a ’splash’.
 
 You can enter DCC API commands at the REPL preceded by
 'dcc.'. E.g.:
 
-dcc.power(1)
+```py
+>>> dcc.power(1)
+```
 
 ### Block Detector
 
-The main.py in the layout directory is the block detector version. It provides MQTT connectivity
-allowing the block detector to report to JMRI or similar. Copy this main.py from the layout directory to the top level directory on the target device.
+The main.py in the layout directory is the block detector version.It provides MQTT connectivity
+allowing the block detector to report to JMRI or similar.
+Copy this main.py from the layout directory to the top level directory on the target device.
 
-Alternatively there is a test harness test_dccrc1.py in the test directory. This may be run using Thonny. Load this into the Thonny editor window and ‘Run current script’ (green play button). It will auto-detect whether on a RP Pico or
+Alternatively there is a test harness test_dccrc1.py in the test directory.
+This may be run using Thonny. Load this into the Thonny editor window and ‘Run current script’
+(green play button). It will auto-detect whether on a RP Pico or
 Arduino Nano RP2040 Connect and allocate the detector pins accordingly.
-It creates the channel 1 block detector objects for two blocks.
+It creates the channel 1 block detector objects for two blocks, rc_ch1a and rc_ch1b.
 
 If OK you will get an invitation to type at the REPL, but the program will still be running in the background. The OLED display shows a ’splash’.
 Block occupancy details will be displayed on the OLED screen.
@@ -259,9 +274,13 @@ ON = const(1)
 ### DCC Diagnostics
 
 ---
-Module dcc_command
+Module test_dcccmd
 
 function **print_stats** *(reset = True)*
 
 This prints diagnostic information on DCC commands
 and RailCom. By default the diagnostics are cleared after being printed.
+
+function **print_dyn_info** *()*
+
+This prints dynamic information received from decoders (datagram id 7).

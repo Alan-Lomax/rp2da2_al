@@ -15,8 +15,8 @@ This module contains the functions and classes for DCC RailCom block detection o
         You should have received a copy of the GNU General Public License along with this program.
         If not, see <http://www.gnu.org/licenses/>.
 """
-
-from machine import  Pin, Timer
+import time
+from machine import  Timer
 from micropython import const
 
 from dcc_rc_pio import RailComRead
@@ -61,7 +61,6 @@ class RComBlkDet(Device):
     
     DEVICE_TYPE = const('b')
    
-
     def __init__(self, blk_name, rc_sm_num, rx_pin, enable_pin = None):
         """Construct the RailCom block detector
         
@@ -78,12 +77,10 @@ class RComBlkDet(Device):
             The RailCom reader will use two sequentially numbered GPIO pins for receiving - the first is supplied.
 
         args:
-            self:
             blk_name: the name of the block
             rc_sm_num:  the first state machine number.
             rx_pin: the first receiver pin.
             enable_pin: the pin as used by the DCC generator to assert the RailCom cutout (optional).
-
         """
         self._rc = RailComRead(rc_sm_num, rx_pin,  self._rail_com_ch1_msg, channel = 1, cu_pin=enable_pin)
         self._id_val = {} # channel 1 payload values for ids 1 & 2
@@ -93,10 +90,10 @@ class RComBlkDet(Device):
 
         # block state may be unknown, empty, occupied (no channel 1 data), occupied with channel 1 data
         self._blk_state = (Device.UNKNOWN, None) # block state is status and RailCom info if available.
-        self._load_timer = Timer(mode = Timer.ONE_SHOT, period = _FIRST_TIMER_PERIOD, callback = self._load_check)
-        self._errors = {} # Error counts by type
-        self._dgs = set() # Datagrams seen
+        self._load_timer = Timer(mode = Timer.PERIODIC, period = _TIMER_PERIOD, callback = self._load_check)
+        self.reset_stats()
         super().__init__(blk_name, RComBlkDet.DEVICE_TYPE)
+        time.sleep(1)
 
 
     def get_error_counts(self):
@@ -108,6 +105,21 @@ class RComBlkDet(Device):
             a dictionary of counts by error code.
         """
         return self._errors
+    
+    def get_cb_count(self):
+        """ Get call back count
+        
+        returns:
+            the number of times the detector read function has been called.
+        """
+        return self._cb_count
+    
+    def get_msg_count(self):
+        """ Get message count
+        
+        returns:
+            the number of times the detector read function callback contained a packet message"""
+        return self._msg_count
     
     def get_dg_list(self):
         """ Get Datagram list
@@ -124,22 +136,22 @@ class RComBlkDet(Device):
         
         Clears the error counts and set of datagram ids.
         """
-        
         self._errors = {}
         self._dgs = set()
+        self._cb_count = 0  # number of times called back
+        self._msg_count = 0 # number of ch1 messages
 
     def get_block_state(self):
         """ Get the current block state
         
         This returns the current block state. The block state is a tuple of the block status and any RailCom
         information available. The block status may be:
-            - Device.UNKNOWN: the block state is unknown
-            - Device.EMPTY: the block is empty
-            - RComBlkDet.BLK_OCC: the block is occupied, but no RailCom Channel 1 information is available
-            - RComBlkDet.BLK_CH1: the block is occupied and RailCom Channel 1 information is available
-            """
+        - Device.UNKNOWN: the block state is unknown
+        - Device.EMPTY: the block is empty
+        - Device.BLK_OCC: the block is occupied, but no RailCom Channel 1 information is available
+        - Device.BLK_CH1: the block is occupied and RailCom Channel 1 information is available
+        """
         return self._blk_state
-
 
     def _log_error(self,error_code):
         try:
@@ -147,11 +159,11 @@ class RComBlkDet(Device):
         except KeyError:
             self._errors[error_code] = 1
 
-
     def _load_check(self, _):
         """ Load check timer expired callback
 
-        Check to see if there's a load on the block.
+        Check to see if there's a load on the block. I.e. the current is greater than
+        the '0' RailCom value.
         """
         #Device.check_core0()
         if self._enable_pin is None or self._enable_pin() == 1:
@@ -160,93 +172,90 @@ class RComBlkDet(Device):
             if self._rx_pin() == 1:
                 # no load
                 if self._no_resp_count < 0:
-                    if self._blk_state[0] != RComBlkDet.BLK_EMPTY: 
+                    if self._blk_state[0] != Device.BLK_EMPTY: 
                     # consecutive missed response limit reached
                     # but it's not been reported
                         self._id_val = {} # clear any previous datagrams
                         self._last_report = None
-                        self._blk_state = (RComBlkDet.BLK_EMPTY, None)
+                        self._blk_state = (Device.BLK_EMPTY, None)
                         self.report_event(*self._blk_state)
                 else:
                     self._no_resp_count -= 1
             else:
                 # false positive unlikely so report change immediately if was empty
                 # but allow limit misreads if last report was CH1 data
-                if self._blk_state[0] not in (RComBlkDet.BLK_OCC, RComBlkDet.BLK_CH1):
+                if self._blk_state[0] not in (Device.BLK_OCC, Device.BLK_CH1):
                     # either empty or start of day
                     self._no_resp_count = _MAX_NO_READ
-                    self._blk_state = (RComBlkDet.BLK_OCC, None)
+                    self._blk_state = (Device.BLK_OCC, None)
                     self.report_event(*self._blk_state)
-                elif self._blk_state[0] == RComBlkDet.BLK_CH1:
+                elif self._blk_state[0] == Device.BLK_CH1:
                     if self._no_resp_count < 0:
                         # consecutive limit reached
                         self._id_val = {}
                         self._last_report = None
-                        self._blk_state = (RComBlkDet.BLK_OCC, None)
+                        self._blk_state = (Device.BLK_OCC, None)
                         self.report_event(*self._blk_state)
                     else:
                         self._no_resp_count -= 1
                 else:
                     self._no_resp_count = _MAX_NO_READ  # reset the count
-
-                
-        # start timer for next check
-        self._load_timer.init(mode = Timer.ONE_SHOT, period = _TIMER_PERIOD, callback = self._load_check)
         
-  
     def _rail_com_ch1_msg(self,  buffer, orientation):
         """ This callback is called on termination of the RailCom Channel 1 message receipt window,
-        whether a message has been received or not. Any decoder on the associated block returns a channel 1
-        message. 
+        whether a message has been received or not.
+        Any decoder on the associated block returns a channel 1 message. 
 
         args:
             self:
             buffer:   translated data
             orientation: orientation of DCC decoder wrt DCC signal
         """
-
+        self._cb_count += 1 
         # detector_side 1 or -1, 0 nothing detected.
         if orientation == 0:
             # do nothing at the moment
             # not logged as error - may be nothing there
             return
         # there must be at least one 1 byte there
+        self._msg_count += 1
         if buffer[0] == RailComRead.ERR_OE:
             # first character has overrun - most likely switching noise after end of window
-            # not logged
+            # or false trigger - not logged
             return
-
-        try:
-            if buffer[1] == RailComRead.ERR_OE:
-                self._log_error('oe') # overrun on in datagram
-            if buffer[0] == RailComRead.ERR_WH or buffer[1] == RailComRead.ERR_WH:
-                self._log_error('wh')  # hamming code look up error detected earlier
-            if buffer[0] == RailComRead.ERR_WL or buffer[1] == RailComRead.ERR_WL:
-                self._log_error('wl')  # hamming code look up error detected earlier
-                return
-
-            if buffer[0] > 0x3f or buffer[1] > 0x3f:
-                self._log_error('ic') # channel 1 datagrams cannot include control bytes
-                return
-        except IndexError:
-            # datagram too short
-            self._log_error('df') # log as datagram format error
+        # other errors indicate datagram corruption - possibly due to >1 decoder in block
+        if len(buffer) != 2:
+            # too short (too long shouldn't be possible)
+            self._log_error(RailComRead.ERR_FE) # log as datagram format error
+            self._id_val = {} # clear any previous datagrams
             return
-
+        
+        for b in buffer:
+            if b > 0x3f:
+                # it's some kind of error
+                self._id_val = {} # clear any previous datagrams
+                if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
+                    # control character - not allowed in channel 1
+                    self._log_error(RailComRead.ERR_CB)
+                else:
+                    # it's an error code 
+                     self._log_error(b)
+                return
+        
+        # save the payload value against the id
+        dg_id = buffer[0] >> 2
+        if not (0 < dg_id <= 3):
+            # invalid datagram id 
+            self._log_error(RailComRead.ERR_ID)
+            return
         # both values need to be present to get this far
         # there's a valid response so reset the 'no response' count
         self._no_resp_count =  _MAX_NO_READ
-        # and restart the load check timer
-        self._load_timer.init(mode = Timer.ONE_SHOT, period = _TIMER_PERIOD, callback = self._load_check)
-
-        # save the payload value against the id
-        dg_id = buffer[0] >> 2
         self._id_val[dg_id] =  ((buffer[0] & 0x03) << 6) | buffer[1]
 
         # track datagrams by type
         self._dgs.add(dg_id)
   
-
         # try and build decoder address
         try:
             if self._id_val[1] == 0:
@@ -273,5 +282,5 @@ class RComBlkDet(Device):
         # report the event and update saved info for next time.
         report_data = (address_type, address, orientation)
         if report_data != self._blk_state[1]: # occupancy info changed?
-            self._blk_state = (RComBlkDet.BLK_CH1, report_data)
+            self._blk_state = (Device.BLK_CH1, report_data)
             self.report_event(*self._blk_state)

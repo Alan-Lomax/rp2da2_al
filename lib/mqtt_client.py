@@ -44,7 +44,7 @@ from micropython import const
 from machine import Timer
 
 # python imports
-import socket, select, json
+import socket, select, json, time, gc
 
 # lib imports
 from device import Device
@@ -53,7 +53,8 @@ from wifi import WiFi
 
 MQTT_BROKER_PORT = const(1883)
 """ Default MQTT broker port number
-This is the default port number for the MQTT broker. It can be overridden in the configuration file."""
+This is the default port number for the MQTT broker. It can be overridden in the configuration file.
+"""
 
 _CONNECT     = const(1) # Client to Server - Connection request
 _CONNACK     = const(2)  # Server to Client - Connect acknowledgment
@@ -70,7 +71,6 @@ _PINGREQ     = const(12) # Client to Server - PING request
 _PINGRESP    = const(13) # Server to Client - PING response
 _DISCONNECT  = const(14) # Client to Server or Server to Client - Disconnect notification
 _AUTH        = const(15) # Client to Server or Server to Client - Authentication exchange
-
 
 
 _REOPEN_TIME = const(5000)    # wait 5 seconds 
@@ -104,7 +104,6 @@ class MQTTPacketOut():
             flags:      
         
         """
-
         self._buffer = bytearray(((pkt_type << 4 | flags & 0xf),0))
 
     def add_byte(self, b):
@@ -172,6 +171,8 @@ class MQTTClient(Device):
     The client will connect to the MQTT broker and subscribe to the topics defined in the subscription list.
     The client will then listen for incoming messages and handle them according to the subscription list.
 
+    Writes are blocking and therefore cannot be executed in Timer isr callbacks.
+
     Attributes:
 
 
@@ -227,7 +228,6 @@ class MQTTClient(Device):
             cls._mqtt_client = MQTTClient()
         return cls._mqtt_client
 
-
     def __init__(self):
         """Construct the MQTT Client
         
@@ -260,18 +260,17 @@ class MQTTClient(Device):
         self.errors = {}
         super().__init__(self._client_id, MQTTClient.DEVICE_TYPE)
 
-
     def start(self, subscription_list):
         """ Start the MQTT Client
 
-        This method is called to start the MQTT client. It sets up the socket and poller, and starts the
-        connection process. It also sets up the subscription list.
+        This method is called to start the MQTT client. It starts the
+        connection process. It also saves the subscription list.
         Args:
             self:
             subscription_list: a list of MQTTSubscripion objects to subscribe to
         """
         self._subscription_list  = subscription_list
-        self._timer = Timer(mode = Timer.ONE_SHOT, period = _REOPEN_TIME, callback = self._re_open)
+        self._re_open_time = time.ticks_add(time.ticks_ms(), _REOPEN_TIME)
 
     def report_event(self, event, data):
         """Report an event
@@ -298,7 +297,16 @@ class MQTTClient(Device):
         Check the socket for read data available.
         If data is available the relevant handler function is called.
         """
-        rdy_lst = self._poll.poll(0)
+        if self._state == MQTTClient.CLOSED:
+            if time.ticks_diff(time.ticks_ms(), self._re_open_time) >=0:
+            # attempt to (re)open connection
+                self._re_open()
+            return
+        else: # not closed 
+            if time.ticks_diff(time.ticks_ms(), self._ping_time) >=0:
+                self._ping()
+                return
+        rdy_lst = self._poll.poll(1) # wait 1 ms
         if len(rdy_lst) == 0:
             return
         for sok, event in rdy_lst: # there should only be one!
@@ -358,14 +366,14 @@ class MQTTClient(Device):
             retain: boolean
             QoS: Quality of Service
         """
-        if ((self._state != MQTTClient.CONNECTED) and (self._state != MQTTClient.PING_SENT)):
+        if ((self._state != MQTTClient.CONNECTED)
+                and (self._state != MQTTClient.PING_SENT)):
             return(False);      # unlike subscriptions we don't hold publications pending connection
     
         self.report_event(Device.MC_SET_LED, (Led.LED_B, 1))
         flags = (QoS << 1) | (MQTTClient.RETAIN if retain else 0)
     
         packet = MQTTPacketOut(_PUBLISH, flags)
-
         packet.add_str(topic)
 
         if QoS > 0:
@@ -378,13 +386,12 @@ class MQTTClient(Device):
         except OSError:
             self._close()
             return(False)
-        self._timer.init(mode = Timer.ONE_SHOT, period = _PING_TIME, callback = self._ping)
+        self._ping_time = time.ticks_add(time.ticks_ms(), _PING_TIME)
         if QoS == 0:
                 # we won't get an acknowledgement so return to idle immediately
                 self.report_event(Device.MC_SET_LED, (Led.LED_B, 0), _PUBLISH)
         return(True)
     
-
     def _subscribe(self):
         packet = MQTTPacketOut(_SUBSCRIBE, MQTTClient.QoS1 << 1)
 
@@ -402,9 +409,8 @@ class MQTTClient(Device):
         except OSError:
             self._close()
             return(False)
-        self._timer.init(mode = Timer.ONE_SHOT, period = _PING_TIME, callback = self._ping)
+        self._ping_time = time.ticks_add(time.ticks_ms(), _PING_TIME)
         return
-
 
     def _puback(self, pid):
         """ Return PUBACK after recieving PUBLISH"""
@@ -417,7 +423,7 @@ class MQTTClient(Device):
         except OSError:
             self._close()
             return(False)
-        self._timer.init(mode = Timer.ONE_SHOT, period = _PING_TIME, callback = self._ping)
+        self._ping_time = time.ticks_add(time.ticks_ms(), _PING_TIME)
 
 
     def _handle_connack(self, pf, packet):
@@ -433,7 +439,6 @@ class MQTTClient(Device):
         self._clientPidTx = set(range(1, 11))
         self._set_state(MQTTClient.SUBSCRIBING)
         self._subscribe()
-
 
     def _handle_suback(self, pf, packet):
         # flags must be 0
@@ -454,7 +459,6 @@ class MQTTClient(Device):
 
         self._set_state(MQTTClient.CONNECTED)
         self.report_event(Device.MC_READY, None)
-
 
     def _handle_publish(self, pf, packet):
         """PUBLISH received"""
@@ -477,7 +481,6 @@ class MQTTClient(Device):
             if subscription.matches(topic):
                 subscription.handle_publication(topic, dup_flag, ret_flag, payload)
 
-
     def _handle_puback(self, pf, packet):
         """PUBACK received
         
@@ -497,7 +500,6 @@ class MQTTClient(Device):
         self._clientPidTx.add(pid) # put back in list as being available.
         self.report_event(Device.MC_SET_LED, (Led.LED_B, 0))
 
-
     def _handle_pingresp(self, pf, packet):
         if packet != b'' or pf != 0:
             # no message or flags allowed
@@ -507,11 +509,11 @@ class MQTTClient(Device):
         self.report_event(Device.MC_SET_LED, (Led.LED_B, 0))
         self._set_state(MQTTClient.CONNECTED)
 
-
     def _log_error(self, error):
         """Log error
         
-        Increment a count by error type."""
+        Increment a count by error type.
+        """
         try:
             self.errors[(error)] +=1
         except KeyError:
@@ -519,8 +521,7 @@ class MQTTClient(Device):
 
     def _close(self):
         """ We only close the socket as part of error recovery"""
-        self._timer.init(mode = Timer.ONE_SHOT,
-                period = _REOPEN_TIME, callback = self._re_open)
+        self._re_open_time = time.ticks_add(time.ticks_ms(), _REOPEN_TIME)
         self.report_event(MQTTClient.MC_CONNECT_ERR, None)
         self._poll.unregister(self._socket)
         self._socket.close()
@@ -528,7 +529,7 @@ class MQTTClient(Device):
         self.report_event(MQTTClient.MC_SET_LED, (Led.LED_B, 1))
 
 
-    def _re_open(self, _):
+    def _re_open(self):
         """Open or Re-open the MQTT connection"""
         if self._wifi.isconnected():
             self.report_event(MQTTClient.MC_SET_LED, (Led.LED_B, 1)) 
@@ -537,7 +538,7 @@ class MQTTClient(Device):
                 self._socket.connect(socket.getaddrinfo(*self._con_params)[0][-1])
             except OSError:
                 self._socket.close()
-                self._timer.init(mode = Timer.ONE_SHOT, period = _REOPEN_TIME, callback = self._re_open)
+                self._re_open_time = time.ticks_add(time.ticks_ms(), _REOPEN_TIME)
                 return
             # assume writes always complete so POLLOUT not needed
             self._poll.register(self._socket, select.POLLIN) 
@@ -554,13 +555,12 @@ class MQTTClient(Device):
                 self._close()
                 return
             self._set_state(MQTTClient.CONNECTING)
-            self._timer.init(mode = Timer.ONE_SHOT, period = _PING_TIME, callback = self._ping)
+            self._ping_time = time.ticks_add(time.ticks_ms(), _PING_TIME)
         else:
             # wi fi disconnected MQTT connect waits
-            self._timer.init(mode = Timer.ONE_SHOT, period = _REOPEN_TIME, callback = self._re_open)
+            self._re_open_time = time.ticks_add(time.ticks_ms(), _REOPEN_TIME)
 
-           
-    def _ping(self, _):
+    def _ping(self):
         if self._state == MQTTClient.PING_SENT:
             # last ping not acknowlegded - broker dead?
             self._close()
@@ -569,12 +569,11 @@ class MQTTClient(Device):
         self.report_event(MQTTClient.MC_SET_LED, (Led.LED_B, 1))      # Ping response pending
         self._socket.write(MQTTPacketOut(_PINGREQ).buffer())
         self._set_state(MQTTClient.PING_SENT)
-        self._timer.init(mode = Timer.ONE_SHOT, period = _PING_TIME, callback = self._ping)
+        self._ping_time = time.ticks_add(time.ticks_ms(), _PING_TIME)
 
     def _set_state(self, state):
         self._state = state
 
-    
     _RESP_HANDLER = {_CONNACK:_handle_connack,
                     _PINGRESP:_handle_pingresp,
                     _PUBACK:_handle_puback,

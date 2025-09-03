@@ -28,9 +28,7 @@ Sessions are clean - i.e. no context saved between sessions.
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """
-
 
 from micropython import const
 
@@ -39,8 +37,6 @@ from mqtt import MQTTAgent
 from mqtt_client import MQTTClient
 
 from dcc_command import DCCCommand
-
-
 
 
 class Power(MQTTAgent):
@@ -72,7 +68,6 @@ class Power(MQTTAgent):
         self._power_state = None    # to indicate first time
         self._dcc = DCCCommand.get_instance()
         
-
 
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
         """Handle a publication
@@ -106,7 +101,6 @@ class Power(MQTTAgent):
 
         returns:
             True if the agent has published else False
-        
         """
         power = self._dcc.power() # get current power
         tx_payload = "ON" if power == DCCCommand.ON else "OFF"
@@ -137,7 +131,6 @@ class Cab(MQTTAgent):
     separate MQTT publications. DCC speed commands are not issued until valid MQTT
     publicatons have been received for both speed and direction.
     """
-
     DIR_DECODE = {'FORWARD':DCCCommand.FWD, 'STOP':DCCCommand.STOP, 'REVERSE':DCCCommand.REV}
     """Direction decode for decoder direction commands"""
 
@@ -179,8 +172,7 @@ class Cab(MQTTAgent):
         except KeyError:
             # ignore unrecognised command topic
             pass
-
-            
+      
     def _handle_fn_pub(self, address, topic3, payload):
         try:
             fn_no = int(topic3)
@@ -226,8 +218,6 @@ class Cab(MQTTAgent):
         self._dcc.set_speed(address, dir, dcc_speed)
         self._cab[address] = (dir, dcc_speed)
 
-
-        
     def _handle_spd_pub(self, address, topic3, payload):
         try:
              # convert JMRI speed 0 - 100 to DCC speed (1 to 127)
@@ -257,7 +247,6 @@ class Cab(MQTTAgent):
 
     def _handle_ns_pub(self, address, topic3, payload):
         pass
-
 
     _CAB_CMD = {'throttle':_handle_spd_pub,
                 'direction':_handle_dir_pub,

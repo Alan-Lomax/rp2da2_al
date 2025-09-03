@@ -32,6 +32,7 @@ class Page(FrameBuffer):
     The text is written to the page using the text() method.
 
     """
+
     def __init__(self):
         """Construct a page.
         
@@ -67,13 +68,13 @@ class OLED_0in91:
     This is a driver for the 0.91 inch OLED display using the SSD1306 controller.
     It uses the I2C interface to communicate with the display.
     """
+
     def __init__(self, i2c):
         """Construct the OLED driver
         
         Check to see if OLED is on I2C bus and initialise the SSD1306.
         
         args:
-            self:
             i2c: I2C driver.
             """
         #self.width = _OLED_WIDTH
@@ -86,9 +87,6 @@ class OLED_0in91:
 
         assert self._addr in self._i2c.scan(), print ('oled not found')
         
-
-
-
         self._cmdBuff = bytearray(2)  # buffer for commands - fixed size
         self._cmdBuff[0] = _I2C_CMD    # it will always hold a command
         #self._pageBuff = memoryview(self._dataBuff[1:len(self._dataBuff)]) 
@@ -96,7 +94,7 @@ class OLED_0in91:
         self._init_display()
 
         self.page = [Page(), Page(), Page(), Page()]
-
+        """Array of pages."""
 
     def _write_cmd(self, cmd):
         """Write a command to the display
@@ -107,7 +105,6 @@ class OLED_0in91:
         self._cmdBuff[1] = cmd
         l = self._i2c.writeto(self._addr, self._cmdBuff)
         assert l == len(self._cmdBuff), 'i2c write cmd NACK'
-
 
     def _write_data(self, buf):
 
@@ -159,7 +156,6 @@ class OLED_0in91:
         time.sleep_ms(200)
         self._write_cmd(0xAF)  #--turn on oled panel
 
-
     def show_page(self, pg_n):
         """Show a page on the display
 
@@ -170,7 +166,6 @@ class OLED_0in91:
         self._write_cmd(0xB0 + pg_n) # set page address
         self._write_cmd(0x00) # set low column address
         self._write_cmd(0x10) # set high column address
-           
 
         #print(f'Written {self._i2c.writeto(self._addr, self._dataBuff)}')
         self._write_data(self.page[pg_n].data_buff())
@@ -187,7 +182,8 @@ class OLED_0in91:
         """Scroll and write.
         
         Scroll pages(lines) up by one line creating a blank line at the bottom (Page 4)
-        and then put the text on the last line"""
+        and then put the text on the last line.
+        """
         lst_pg = _OLED_HEIGHT//_PAGE_HEIGHT -1 # last page index
            
         for pgn in range(0, lst_pg):

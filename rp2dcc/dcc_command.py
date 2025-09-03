@@ -46,12 +46,10 @@ two for RailCom. The two RailCom state machines must be on the same PIO block.
 
 
 from micropython import const
-from machine import Pin, ADC
-from device import Device
+from machine import Pin
 
 
 from dcc_cmd_util import SpeedCommand, FGrp1Command, CommandPacket, IdlePacket, CV_Access
-
 from dcc_cmd_pio import DCCCmdTx
 
 
@@ -62,15 +60,12 @@ class DCCCommand():
     of DCC commands to be serialised. It performs the scheduling and tranmission of
     command packets.
 
-
-    
     Attributes:
         FWD:    Forward direction
         REV:    Reverse direction
         STOP:   Stopped N.B this is included for completeness
         ON:     Power On
         OFF:    Power Off
-        
     """
 
     # class constants - may be imported by other modules
@@ -96,10 +91,8 @@ class DCCCommand():
         Returns:
             The DCC Command instance
         """
-
         return cls._dcc_cmd
 
-    
     def __init__(self, DCC_pn, sleep_pn, gen_sm_num, enable_pn = None):
         """DCC Command object constructor
         
@@ -120,7 +113,6 @@ class DCCCommand():
             gen_sm_num: PIO state machine number to be used for DCC Generation
             enable_pn: Pin number to enable the DRV8874.
         """
-
         if not DCCCommand._dcc_cmd is None:
             raise RuntimeError ('Attempt to create 2nd DCC Cmd')
         DCCCommand._dcc_cmd = self
@@ -141,7 +133,6 @@ class DCCCommand():
         # Set up interrupt on enable pin to schedule next packet when 
         # cutout period ends.
         enable_pn.irq(self._nxt_packet, Pin.IRQ_RISING)
-
 
     def power(self, p = None):
         """DCC Power On/Off
@@ -172,7 +163,6 @@ class DCCCommand():
 
         return r
 
-
     def set_speed(self, address, dir, speed = 0):
         """Set Speed (including direction)
         
@@ -194,7 +184,7 @@ class DCCCommand():
             if validation fails.
         """
         # a bit of defensive programming
-        if address < 1 or address > CommandPacket.MAX_LONG_ADDR:
+        if not (1 <= address <= CommandPacket.MAX_LONG_ADDR):
             return False
         if not dir in (DCCCommand.FWD, DCCCommand.REV):
             return False
@@ -208,7 +198,6 @@ class DCCCommand():
 
         return True
 
-            
     def set_fg1(self, address, f_num, state):
         """Set Function Group 1
         
@@ -231,9 +220,9 @@ class DCCCommand():
             if validation fails.   
         """
         # a bit of defensive programming
-        if address < 1 or address > CommandPacket.MAX_LONG_ADDR:
+        if not (1 <= address <= CommandPacket.MAX_LONG_ADDR):
             return False
-        if f_num < 0 or f_num > 4:
+        if not (0 <= f_num  <= 4):
             return False
         if not state in (DCCCommand.ON,  DCCCommand.OFF):
             return False
@@ -246,7 +235,6 @@ class DCCCommand():
 
         return True
     
-
     def read_cv(self, address, cv_num):
         """Read CV (POM)
         
@@ -289,7 +277,6 @@ class DCCCommand():
             return False
         return self._pom_cmd(CV_Access(address, cv_num - 1, operation = 'w', value = new_val))
         
-    
     def _get_cmd(self, key):
         """Get a command from the packet list
         
@@ -297,14 +284,12 @@ class DCCCommand():
         """
         return self._packet_list[key]
     
-
     def _add_cmd(self, command):
         """Add Command to Packet List"""
         type = command.get_type()
         addr = command.get_address()
         self._packet_list[(type, addr)] = command
         self._active_address.add(addr)
-
 
     def _pom_cmd(self, command):
         """Process Program on Main command
@@ -330,7 +315,6 @@ class DCCCommand():
         self._pom_packet = command
         return True
 
-
     def _nxt_packet(self, _):
         """ Generate next packet - soft interrupt or timer callback.
         
@@ -338,7 +322,7 @@ class DCCCommand():
         list is to be serialised out on the DCC interface. If the list is empty the DCC
         Idle packet is serialised or if the next packet is unavailable (e.g. being updated).
 
-        The function is triggered via a soft ISR.  If RailCom is enabled, this is connected to be enable
+        The function is triggered via a soft ISR.  If RailCom is enabled, this is connected to the enable
         pin rising indicating the end of the cutout period assocated with the preceding command.
 
         TODO:
@@ -347,7 +331,6 @@ class DCCCommand():
         
         This function instructs the next Command object in the list to send its command.
         """
-        #Device.check_core0()
         if self._dcc_gen_pio.pio_pwr() == DCCCmdTx.OFF:
             # power now off - don't transmit.
             return

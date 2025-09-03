@@ -38,7 +38,6 @@ occur.
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """
 
 # stardard python imports
@@ -54,17 +53,11 @@ MAX_Q_LEN = const(16)
 """The capacity of the event queue."""
 
 
-
-
-
 class ThreadQError(RuntimeError):
     """Thread Queue Error
     
     Raised to indicate adding to the queue failed due to queue full."""
     pass
-
-
-
 
 
 class Device():
@@ -88,12 +81,8 @@ class Device():
         MC_CONNECT_ERR  : Connect error - broker not available
         WF_SET_LED : Set WiFi LED instruction, data is colour, value
         TO_CMD : Set Turnout (point) instruction, data is 'N' or 'R'
-        
-        
-
     """
     # class variables
-
 
     # device states 0 & 1 are allocated for hardware devices with binary states e.g. points & relays etc
     UNSET = const(0)
@@ -121,7 +110,6 @@ class Device():
 
     # MQTT Client
 
-
     # 40 not used
     MC_SET_LED      = const(41) # Instruction to set Comms led - data is colour, value (0 or 1)
     MC_READY        = const(43) # initial subscriptions registered
@@ -135,7 +123,6 @@ class Device():
 
     TO_CMD  = const(60) # Point control instruction - data is hw number, value 'N' or 'R'
 
-    
     # _fido = WDT()  # enable a watch dog timer just in case
 
     _queue = deque((), MAX_Q_LEN, 1)
@@ -181,7 +168,6 @@ class Device():
             a list of device names"""
         return cls._device_table.keys()
     
-
     @staticmethod
     def check_core0():
         """Check on core 0
@@ -215,7 +201,6 @@ class Device():
         Returns:
             None or a tuple
         """
-       
         event = None
         while event is None:
             with Device._q_lock:
@@ -228,7 +213,6 @@ class Device():
             time.sleep_ms(1)
         return event
         
-
     def __init__(self, name, type):
         """Initialise Device
 
@@ -254,7 +238,8 @@ class Device():
             self:
             
         returns:
-            the device name as a string"""
+            the device name as a string
+        """
         return self._name
     
     def get_type(self):
@@ -264,7 +249,8 @@ class Device():
             self:
             
         returns:
-            the device type as a single character string"""
+            the device type as a single character string
+        """
         return self._type
     
     def value(self, v = None):
@@ -278,8 +264,8 @@ class Device():
             v: the value to be writen if supplied
         
         raises:
-            NotImplementedError: if not overridden"""
-        
+            NotImplementedError: if not overridden
+        """
         raise NotImplementedError
     
     def get_state(self):
@@ -292,8 +278,8 @@ class Device():
             self:
         
         raises:
-            NotImplementedError: if not overridden"""
-        
+            NotImplementedError: if not overridden
+        """
         raise NotImplementedError
 
 
@@ -308,8 +294,7 @@ class Device():
             self:
             event:  event or instruction code - a Device class constant
             data:   event data to qualify code - device dependent  
-            """
-
+        """
         with Device._q_lock:
             try:
                 Device._queue.append((self, event, data))

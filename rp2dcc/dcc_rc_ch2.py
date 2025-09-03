@@ -44,24 +44,50 @@ class RComCmdRsp(Device):
 
     Attributes:
         DG_POM: POM response (CV value) datagram identifier.
+        DG_TS1: track search 1
+        DG_TS2: track search 2
+        DG_TS14: track search 14
+        DG_EXT: location information
+        DG_CDI: current driving info - not specified yet
         DG_DYN: dynamic info (DG ID 7) datagram identifier.
-        DYN_REAL_SPEED0: real speed part 1 datagram identifier.
+        DG_XPOM8: extended POM response - 1st CV
+        DG_XPOM9: extended POM response - 2nd CV
+        DG_XPOM10: extended POM response - 3rd CV
+        DG_XPOM11: extended POM response - 4th CV
+        DG_CV_AUTO: Background CV transmission
+        DYN_REAL_SPEED: real speed part 1 datagram identifier.
         DYN_REAL_SPEED1: real speed part 2 datagram identifier.
         DYN_RECEP_STATS: reception stats datagram identifier.
+        DYN_TRACK_VOLT: track voltage
+        DYN_DIRECTION: direction status byte
         DEVICE_TYPE: Device type for reporting events.
-
-
+        ERR_CODE: list of error codes
     """
     # class constants
     # datagrams and contents
-    DG_POM = const(0)       # datagram with POM response (CV value)
+    DG_POM = const(0)       # POM response (CV value)
+    DG_TS1 = const(1)       # track search 1
+    DG_TS2 = const(2)       # track search 2
+    DG_TS14 = const(14)     # track search 14
+    DG_EXT = const(3)       # location information
+    DG_CDI = const(4)       # current driving info - not specified yet
     DG_DYN = const(7)       # datagram with dynamic info (DG ID 7)
-    DYN_REAL_SPEED0 = const(0) # real speed part 1
-    DYN_REAL_SPEED1 = const(1) # real speed part 2
+    DG_XPOM8 = const(8)     # extended POM response - 1st CV
+    DG_XPOM9 = const(9)     # extended POM response - 2nd CV
+    DG_XPOM10 = const(10)     # extended POM response - 3rd CV
+    DG_XPOM11 = const(11)     # extended POM response - 4th CV
+    DG_CV_AUTO = const(12)  # Background CV
+
+    DYN_REAL_SPEED  = const(0) # real speed part 1 - this is the index used for speed
+    DYN_REAL_SPEED1 = const(1) # real speed part 2 - not used.
     DYN_RECEP_STATS = const(7) # reception stats
+    DYN_DIRECTION   = const(27)# direction status byte
+    DYN_TRACK_VOLT  = const(46)# track voltage
 
     DEVICE_TYPE = const('r')
-
+    
+    # error codes as detected by low level code
+    ERR_CODE = (RailComRead.ERR_WH, RailComRead.ERR_WL, RailComRead.ERR_OE, RailComRead.ERR_CB)
 
     def __init__(self, rc_sm_num, rx_pn, enable_pn):
         """DCC Command object constructor
@@ -74,17 +100,17 @@ class RComCmdRsp(Device):
         The RailCom reader for channel 2 is instantiated and the base class is initiated.
 
         Note:
-            The RailCom reader will use two sequentially numbered state machines - the first is supplied.
+            The RailCom reader will use two sequentially numbered state machines -
+            the first is supplied.
 
-            The RailCom reader will use two sequentially numbered GPIO pins for receiving - the first is supplied.
+            The RailCom reader will use two sequentially numbered GPIO pins for receiving -
+              the first is supplied.
 
         Args:
-            self:
             rc_sm_num: first state machine number to be used RailCom receiver functions.
             rx_pn:  First pin number for RailCom rx
             enable_pn: Pin number that enables the DRV8874 - it's only read here
         """
-
         self._rc = RailComRead(rc_sm_num,
                               rx_pn,  self._rail_com_ch2_msg, 2, enable_pn)
         
@@ -93,7 +119,6 @@ class RComCmdRsp(Device):
         self._recep_stats = {}  # decoder reported reception stats by address
         self._dyn_info = {} # other dynamic info
         self._pom_acc = {}   # outstanding cv accesss requests by command type/address
-
 
         self._errors = {} # error counts
         self._dgs = set() # Datagrams seen
@@ -128,9 +153,6 @@ class RComCmdRsp(Device):
         self._errors = {}
         self._dgs = set()
 
-
-
-
     def _log_error(self,error_code):
         try:
             self._errors[error_code] += 1
@@ -151,12 +173,11 @@ class RComCmdRsp(Device):
             self:
             buffer:   translated data
             detector_side: orientation of DCC decoder wrt DCC signal
-        
         """
         cmd = CommandPacket.get_last_command()
         if cmd is None:
             # no point in continuing if we don't know what command was issued
-            self._log_error('nc')   # no command - possible software sync error
+            self._log_error(RailComRead.ERR_RESP)   # no command - possible software sync error
             return
         address = cmd.get_address()
         if address == 255:
@@ -176,23 +197,13 @@ class RComCmdRsp(Device):
                 if time.ticks_diff(time.ticks_ms(), timeout) > 0:
                     # timeout expired
                     del(self._pom_acc[(address)]) # no longer needed
-                    self.report_event(RComCmdRsp.POM_TO, (address, cv + 1))
+                    self.report_event(Device.POM_TO, (address, cv + 1))
             except KeyError:
                 # no outstanding POM command
                 pass
 
-
-
-        # if last command was to the broadcast address - no response expected
-        # (unless we start looking at accessories too)
-        if len(buffer) == 0:
-            # no data
-            return
-        self._act_on_datagram(self._parse_cg2_msg(buffer, detector_side), address)
-        
-        
-        
-
+        if len(buffer) != 0:
+            self._act_on_datagram(self._parse_cg2_msg(buffer, detector_side), address)
 
     def _parse_cg2_msg(self, buff, d_side):
         """ Parse channel 2 message
@@ -203,7 +214,6 @@ class RComCmdRsp(Device):
         data byte contrinbute to the payload of a datagram and the most significant 2 bits are ignored. The payload
         content of each byte is concatenated together to form the datagram. The datagram id is
         the first 4 bits of the datagram. The datagram id is used to determine the length of the datagram.
-        
         """ 
         buff_iter = iter(buff)
         dg_id = None
@@ -214,33 +224,23 @@ class RComCmdRsp(Device):
             while True:
                 # StopIteration will end the loop
                 b = next(buff_iter)
-                if b == RailComRead.ERR_WH:
-                    # Hamming weight error high
-                    # no point in going any further - as structure of
-                    # remaining message indeterminate
-                    self._log_error('wh')
-                    return datagram
-                if b == RailComRead.ERR_WL:
-                    # Hamming weight error low
-                    # no point in going any further - as structure of
-                    # remaining message indeterminate
-                    self._log_error('wl')
-                    return datagram
-                if b == RailComRead.ERR_OE:
-                    # Over run error
-                    # no point in going any further - and
-                    # don't bother logging - this is most likely switching noise after end of window
-                    return datagram
-
-                if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
-                    # encoded protocol bytes
-                    # these only get reported once so save in a set
-                    # as ACK may be used as filler
-                    if b not in pb_set:
-                        # first time seen - ignore repeats
-                        datagram.append((RailComRead.DG_RESP, b))
-                        self._dgs.add(RailComRead.DG_RESP)
-                        pb_set.add(b)
+                if b > 0x3f:
+                    if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
+                        # encoded protocol bytes
+                        # these only get reported once so save in a set
+                        # as ACK may be used as filler
+                        if b not in pb_set:
+                            # first time seen - ignore repeats
+                            datagram.append((RailComRead.DG_RESP, b))
+                            self._dgs.add(RailComRead.DG_RESP)
+                            pb_set.add(b)
+                    elif b in RComCmdRsp.ERR_CODE:
+                        # Recognised Error code
+                        # no point in going any further - as structure of
+                        # remaining message indeterminate
+                        if b != RailComRead.ERR_OE:
+                            self._log_error(b)
+                        return datagram
                 else:
                     # separate the datagram id and first 2 bits of payload
                     dg_id = (b & 0xFC)  >> 2
@@ -249,22 +249,17 @@ class RComCmdRsp(Device):
                         error = False
                         for _ in range(_DG2_LEN[dg_id]):
                             b = next(buff_iter)
-                            if b == RailComRead.ERR_WH:
-                                # original byte was Hamming weight > 4
-                                self._log_error('wh')
-                                error = True
-                            elif b == RailComRead.ERR_WL:
-                                # original byte was Hamming weight < 4
-                                self._log_error('wl')
-                                error = True
-                            elif b == RailComRead.ERR_OE:
-                                # original byte was overrun error (missing stop bit)
-                                self._log_error('oe')
-                                error = True
-                            elif b > 0x3f:
-                                # datagram can't include protocol control byte
-                                self._log_error('cb')
-                                error = True # so this and any more are ignored
+                            if b > 63:
+                                if b in RComCmdRsp.ERR_CODE:
+                                    # Recognised Error code
+                                    # no point in going any further - as structure of
+                                    # remaining message indeterminate
+                                    self._log_error(b)
+                                    error = True            
+                                else:
+                                    # datagram can't include protocol control byte
+                                    self._log_error(RailComRead.ERR_CB)
+                                    error = True # so this and any more are ignored
                             elif error:
                                 # error already seen - skip 
                                 pass
@@ -278,7 +273,7 @@ class RComCmdRsp(Device):
                     except KeyError: # not valid datagram (not in list)
                         # no point in going any further - as structure of
                         # remaining message indeterminate
-                        self._log_error('id')
+                        self._log_error(RailComRead.ERR_ID)
                         return datagram
 
 
@@ -289,27 +284,20 @@ class RComCmdRsp(Device):
             if dg_id is not None:
                 # datagram not complete - ignore it - duff format
                 # other earlier datagrams in same message will be processed
-                self._log_error('df')
+                self._log_error(RailComRead.ERR_FE)
 
         return datagram
 
     def _act_on_datagram(self, datagram, addr):
-        """Take action on datagram"""
-        
-        for dg in datagram:
-            #if dg == (RailComRead.DG_RESP, RailComRead.NO_RESP):
-            #    # quietly ignore no response - there can be no others
-            #    return  
-
-            id, payload = dg
+        for id, payload in datagram:
             if id == RComCmdRsp.DG_DYN:
                 # dynamic information RCN217 5.5
                 dyn_si = payload & 0x3F # extract subindex
                 value = payload >> 6
                 if dyn_si <= 1: # speed subindex 0 or 1
-                    self._speed[addr] = value + (dyn_si << 8)
-                elif dyn_si == RComCmdRsp.DYN_RECEP_STATS:
-                    self._recep_stats[addr] = value
+                    # sub index 0 : 0 - 255 kph, 1 : > 256 
+                    # store speed under sub-index 0 
+                    self._dyn_info[addr, 0] = value + (dyn_si << 8)
                 else:
                     # keep record of other dynamics
                     self._dyn_info[addr, dyn_si] = value
@@ -320,22 +308,16 @@ class RComCmdRsp(Device):
                 try:
                     cv, _= self._pom_acc[(addr)]
                     del(self._pom_acc[(addr)]) # no longer needed
-                    self.report_event(RComCmdRsp.POM_CV, (addr, cv + 1, payload))
+                    self.report_event(Device.POM_CV, (addr, cv + 1, payload))
                 except KeyError:
                     pass
-            elif dg == (RailComRead.DG_RESP, RailComRead.NAK):
+            elif id == RailComRead.DG_RESP and payload == RailComRead.NAK:
                 try:
                     cv, _= self._pom_acc[(addr)]
                     del(self._pom_acc[(addr)]) # no longer needed
-                    self.report_event(RComCmdRsp.POM_NAK, (addr, cv + 1))
+                    self.report_event(Device.POM_NAK, (addr, cv + 1))
                 except KeyError:
                     pass
 
-
         # save the last received datagrams
-        '''
-        if len(datagram) > 1:
-            print(addr, datagram)
-        '''
-      
         self._rc_msg[addr] = (datagram)            

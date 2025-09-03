@@ -24,7 +24,6 @@ The OlED display is updated using blocked writes.
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """
 from machine import I2C
 
@@ -40,16 +39,15 @@ class Screen():
     require display on the screen or other actions (e.g. UI menu/data)
 
     It's a singleton.
-
     """
 
     _scrn = None # this will be set to the singleton object on instantiation
 
     _CV_LU = {(8, 151):"ESU", (8, 145):"ZIMO", (8, 78):"TOM"}
     """Translation table for CV number, value tuples into text.
-    Initial contents decode CV 8 values into manufacturer text."""
+    Initial contents decode CV 8 values into manufacturer text.
+    """
     
-
     @classmethod
     def get_instance(cls):
         """Return the singleton instance
@@ -58,17 +56,15 @@ class Screen():
         
         args:
             cls:
-            """
+        """
         if cls._scrn is None:
             cls._scrn = Screen()
         return cls._scrn
-        
 
     def __init__(self):
         """Screen Initialiser
         
         Initialise the oled and clear screen.
-
         """
         if (Screen._scrn) != None and (Screen._scrn is not self):
             raise RuntimeError ('Only one Screen object possible')
@@ -76,8 +72,6 @@ class Screen():
         self._oled = OLED_0in91(I2C(0))
         self.clear_screen()
         self._just_started = True
-
-
 
     def clear_screen(self):
         """Clear the screen
@@ -93,9 +87,10 @@ class Screen():
 
         This loads the screen with the given lines and then displays it.
         Each line is a tuple of (page number, text, x position).
-        If the same page number appears multiple times in `lines`, only the last entry for that page will be displayed.
+        If the same page number appears multiple times in *lines*, only the last entry for that page
+        will be displayed.
 
-        Args:
+        args:
             lines: A list of tuples, each containing (page number, text, x position).
         """
         for pgn, text, x in lines:
@@ -111,11 +106,9 @@ class Screen():
         dealt with elsewhere.
 
         Args:
-            self:
             report: a tuple containing the reference to the source object, the unique event code see: display
                 and additional information - format and content event specific
         """
-    
         (source, event, data) = report
         try:
             self._event_handler[event](self, source, data)
@@ -132,7 +125,6 @@ class Screen():
 
     def _handle_blk_occ(self,src, _):
         self._oled.scroll_write(f'{src.get_name()} occupied')
-
 
     def _handle_cv_val(self,src, data):
         address, cv_num, value = data

@@ -30,7 +30,6 @@ immutable.
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """
 
 
@@ -40,7 +39,6 @@ from mqtt_client import MQTTClient
 
 
 from dcc_rc_ch1 import RComBlkDet
-from point import MPPoint, Point
 
 
 class MQTTAgent():
@@ -48,8 +46,6 @@ class MQTTAgent():
 
     This is a virtual class acting as the base for MQTT agents that set up subscriptions,
     process received publications and publish.
-
-    At the moment 
     """
 
 
@@ -66,11 +62,8 @@ class MQTTAgent():
             QoS: the Quality of Service for this subscription.  Must be either MQTTClient.QoS0 or MQTTClient.QoS1
 
         """
-
         self._topic_filter = topic_filter
         self._QoS = QoS
-
-
 
     def matches(self, topic):
         """check if topic matches filter
@@ -141,8 +134,6 @@ class MQTTAgent():
         return False
 
 
-
-
 class Will(MQTTAgent):
     """Manage Will Subscription
 
@@ -160,7 +151,6 @@ class Will(MQTTAgent):
             topic_filter: the topic filter to match against received topics
             QoS: the Quality of Service for this subscription.  Must be either MQTTClient.QoS0 or MQTTClient.QoS1
         """
-
         super().__init__(topic_filter, QoS)
 
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
@@ -177,71 +167,6 @@ class Will(MQTTAgent):
         """
         pass
 
-
-class TO(MQTTAgent):
-    """Turnout Subscription
-    
-    This subscription is used to handle publications to the turnout topic.
-    It handles the turnout message
-    when it is received from the broker."""
-
-    TO_CLOSED = 'CLOSED'
-    TO_THROWN = 'THROWN'
-    TO_INCONSISTENT = 'INCONSISTENT'
-    TO_UNKNOWN = 'UNKNOWN'
-    TO_DECODE = {TO_THROWN:'R', TO_CLOSED:'N'} # jmri only sets thrown or closed
-    POINT_TOPIC_PREFIX = "track/turnout"
-
-
-
-    TO_ENCODE = {Point.UNAVAIL:TO_UNKNOWN,
-                 Point.UNKNOWN:TO_UNKNOWN,
-                 Point.INDETERMINATE:TO_INCONSISTENT,
-                 Point.NORMAL:TO_CLOSED,
-                 Point.REVERSE:TO_THROWN}
-    
-
-
-    def __init__(self, point):
-        """Initialise the turnout subscription
-        Args:
-            topic_filter: the topic filter to match against received topics
-            QoS: the Quality of Service for this subscription.  Must be either MQTTClient.QoS0 or MQTTClient.QoS1
-        """
-        self._point = point # Point controller
-        self._name = point.get_name()
-        self._last_state = point.get_state()
-     
-        super().__init__(f'{TO.POINT_TOPIC_PREFIX}/{self._name}/set', MQTTClient.QoS1)
-
-    def handle_publication(self, topic, dup_flag, ret_flag, payload):
-        """Handle a publication
-        This method is called by the MQTT client when a publication is received that 
-        matches the topic filter.
-        Args:
-            topic: the topic of the publication
-            dup_flag: True if this is a duplicate publication
-            ret_flag: True if this is a retained publication
-            payload: the payload of the publication as a string
-        """
-        print("Point", topic, payload)
-        try:
-            self._point.set_position(TO.TO_DECODE[payload])
-        except KeyError:
-            print("Point payload invalid")
-
-    def pub_check(self):
-        state = self._point.get_state()
-        if state != self._last_state:
-            # it's changed
-            if self._client.publish(f'{self.POINT_TOPIC_PREFIX}/{self._name}/event',
-                                    TO.TO_ENCODE[state]):
-                self._last_state = state
-        
-            
-
-
-
 class Block(MQTTAgent):
     """Block Subscription 
 
@@ -254,13 +179,11 @@ class Block(MQTTAgent):
                        RComBlkDet.BLK_OCC:"ACTIVE",
                        RComBlkDet.BLK_CH1:"ACTIVE"}
 
-
     def __init__(self, rc_block):
         self._rc_block = rc_block # RailCom block
         self._name = rc_block.get_name()
         self._last_block_state = None
         super().__init__(f'{Block.SENSOR_TOPIC_PREFIX}/{self._name}/set', MQTTClient.QoS1)
-
 
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
         """Handle a publication
@@ -271,7 +194,6 @@ class Block(MQTTAgent):
             ret_flag: True if this is a retained publication
             payload: the payload of the publication as a string
         """
-
         print("Sensor", topic, payload)
 
     def pub_check(self):
@@ -296,10 +218,8 @@ class Block(MQTTAgent):
                                  tx_payload, False, MQTTClient.QoS1):
             return False # publish failed - retry later
         self._last_block_state = current_block_state
-        print("Block", self._name, "state", tx_payload)
         if current_block_state[0] == RComBlkDet.BLK_CH1:
             # channel 1 info available
-            print("Block", current_block_state[1])
             self._client.publish(f'{Block.REPORTER_TOPIC_PREFIX}/{self._name}',
                                  f'{current_block_state[1][1]} {current_block_state[1][2]}',
                                  False, MQTTClient.QoS1)
