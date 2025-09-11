@@ -300,9 +300,11 @@ class MQTTClient(Device):
         if self._state == MQTTClient.CLOSED:
             if time.ticks_diff(time.ticks_ms(), self._re_open_time) >=0:
             # attempt to (re)open connection
+                self._wifi.check_OK()
                 self._re_open()
             return
-        else: # not closed 
+        else: # not closed
+            self._wifi.check_OK()
             if time.ticks_diff(time.ticks_ms(), self._ping_time) >=0:
                 self._ping()
                 return

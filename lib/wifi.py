@@ -105,7 +105,7 @@ class WiFi(Device):
             self._wlan.connect(*self._credentials)
         else:
             self._connected = True
-        self._check_timer = Timer(mode = Timer.PERIODIC, period = _REOPEN_TIME, callback = self._check_OK)
+        #self._check_timer = Timer(mode = Timer.PERIODIC, period = _REOPEN_TIME, callback = self._check_OK)
 
     def report_event(self, event, data):
         """Report an event
@@ -134,18 +134,14 @@ class WiFi(Device):
         """
         return(self._credentials[0])
 
-    def _check_OK(self, _):
+    def check_OK(self):
         """Check if the WiFi is connected
 
-        This timer callback checks if the WiFi is connected. If it is newly connected, the LED is cleared.
+        This checks if the WiFi is connected. If it is newly connected, the LED is cleared.
         If it is not connected, the LED is set to red and the connection is attempted.
         If the connection is not established, the active state of the WiFi is toggled to force a reconnect.
         
-        TODO: wifi connect blocks - consider refactoring so not in timer callback.
-
-        args:
-            self:
-            _: timer id (ignored)
+        It is intended that this is called if required by comms client code.
             
         """
         if self._wlan.isconnected() and self._connected:

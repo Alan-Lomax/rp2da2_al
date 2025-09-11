@@ -81,6 +81,7 @@ class RComCmdRsp(Device):
     DYN_REAL_SPEED  = const(0) # real speed part 1 - this is the index used for speed
     DYN_REAL_SPEED1 = const(1) # real speed part 2 - not used.
     DYN_RECEP_STATS = const(7) # reception stats
+    DYN_TEMP = const(26)       # temperature
     DYN_DIRECTION   = const(27)# direction status byte
     DYN_TRACK_VOLT  = const(46)# track voltage
 
@@ -159,20 +160,16 @@ class RComCmdRsp(Device):
         except KeyError:
             self._errors[error_code] = 1
 
-    def _rail_com_ch2_msg(self, buffer, detector_side):
+    def _rail_com_ch2_msg(self, buffer, _):
         """Handle RailCom Message Callback
         
         This callback is called on termination of the RailCom Channel 2 message receipt window,
         whether a message has been received or not. The addressed decoder returns a channel 2
         message. Other mobile decoders remain silent.
 
-        TODO:
-            confirm whether interpretting detector side useful in Ch2 context
-
         args:
-            self:
             buffer:   translated data
-            detector_side: orientation of DCC decoder wrt DCC signal
+            _: orientation of DCC decoder wrt DCC signal - not used
         """
         cmd = CommandPacket.get_last_command()
         if cmd is None:
@@ -203,9 +200,9 @@ class RComCmdRsp(Device):
                 pass
 
         if len(buffer) != 0:
-            self._act_on_datagram(self._parse_cg2_msg(buffer, detector_side), address)
+            self._act_on_datagram(self._parse_cg2_msg(buffer), address)
 
-    def _parse_cg2_msg(self, buff, d_side):
+    def _parse_cg2_msg(self, buff):
         """ Parse channel 2 message
         
         Inspect the message and extract datagrams which are saved in list and returned.
@@ -276,9 +273,7 @@ class RComCmdRsp(Device):
                         self._log_error(RailComRead.ERR_ID)
                         return datagram
 
-
                     dg_id = None  # set back to None to mark datagram complete
-
 
         except StopIteration:
             if dg_id is not None:

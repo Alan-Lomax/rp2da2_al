@@ -32,14 +32,12 @@ Memory mapped addresses and offsets are as defined in the RP2040 datasheet.
 # stop pylance reporting undefined variables for PIO code
 # pyright: reportUndefinedVariable=false
 
-from machine import Pin, mem32
+from machine import mem32, disable_irq, enable_irq
 
 from micropython import const, schedule
 import array
 import rp2
-import time
 
-from device import Device
 
 
 # module constants - not for importing elsewhere
@@ -47,6 +45,16 @@ _PIO_CU_FREQ = const(250_000)           # 250 kHz - 4 micro sec. tick period for
 _PIO_CU_D_FREQ = const(500_000)         # 500 kHz - 2 micro sec. tick period for block detect cu timing
 _PIO_RX_FREQ = const(4_000_000)         # 4MHz - 16 * 250kHz bps rx clock rate for async. rx
    
+
+# memory mapped addresses and offsets of PIO registers (as defined the RP2040 datasheet)
+PIO0_BASE = const(0x50200000)
+""" PIO  0 base address"""
+PIO1_BASE = const(0x50300000)
+""" PIO 1 base address """
+SM1_EXECCTRL = const(0xe4)
+""" State machine 1 exec control offset """
+SM3_EXECCTRL = const(0x114)
+""" State machine 3 exec control offset """
 
 class RailComRead:
     """ The RailComm Reader class
@@ -153,6 +161,13 @@ class RailComRead:
     See RCN-217 2.5.
     """
 
+    _RESTART_MEM = {0:PIO0_BASE + SM1_EXECCTRL,
+                    2:PIO0_BASE + SM3_EXECCTRL,
+                    4:PIO1_BASE + SM1_EXECCTRL,
+                    6:PIO1_BASE + SM3_EXECCTRL}
+    """Memory locations for restart calculation by MP state machine number
+    """
+
     def __init__(self, cu_sm_num, rc_rx_pin, cb, channel = 1, cu_pin = None):
         """ RailCom class constructor
 
@@ -223,6 +238,7 @@ class RailComRead:
 
         self._sm.active(True)       # start both state machines
         self._smrx.active(True)
+        self._ql = False            # queue lock - to protect against race
 
     @rp2.asm_pio() 
     def _cut_out1_com():
@@ -294,6 +310,8 @@ class RailComRead:
         nop()               [20] # ch1 end 
         # PEB + 178 to 184 µs - ch1 end is PEB +177
         irq(rel(0))         [31] # end of channel 1 window - initiate read
+        #label("freeze")
+        #jmp("freeze")       [0]  # wait to be restarted to avoid race
         nop()               [31] # skip channel 2 window 
         nop()               [31] # 
         nop()               [31] #
@@ -369,8 +387,7 @@ class RailComRead:
         17 instructions
         """
         wait(1, irq, rel(4))    [0] # wait to be enabled
-        wrap_target()
-        # each bit is sampled at 16 tick intervals
+        wrap_target()               # restart calculated on basis that this lables 2nd instruction
 
         label("await_start")
         # we want a confirmed start bit to be at least 3/4 bit time 
@@ -390,54 +407,60 @@ class RailComRead:
         in_(pins,1)             [0] # read next bit into isr
         jmp(y_dec,"next_bit")   [14] # wait 15 more ticks - 16 ticks in total  
         jmp(pin,"stop_ok")      [0] # if all data bits read check stop bit
-        wait(1, pin, 0)         [0] # overrun error - wait for line idle
         mov(isr, invert(null))  [0] # clear the isr - to all '1's for overrun
-        jmp("push")             [0]
+        push(noblock)           [0] # and save isr to rx FIFO
+        label("freeze")
+        jmp("freeze")           [0] # lock after overrun pending external reset
 
         label("stop_ok")            # stop bit OK
         in_(osr,1)              [0] # shift orientation bit into isr
         in_(null, 23)           [0] # shift all bits to l.s. end of isr
-        label("push")
         push(noblock)           [0] # and save isr to rx FIFO - data lost if FIFO overrun
 
         wrap()                      # wait for next start bit
 
     def _read_isr(self, _):
         """Hard ISR to ensure restart asap after window end"""
+        self._smrx.exec(self._restart)
         self._smrx.restart() # seems ok now shouldn't affect RX FIFO
-        schedule(self._read_ref,(0)) # use preset indirection to avoid new heap usage
+        rc = self._smrx.rx_fifo()
+        if (not self._ql) and rc > 0: # discard blank reads
+            self._ql = True  # set lock to stop race condition
+            schedule(self._read_ref,(rc)) # use preset indirection to avoid new heap usage
 
-    def _read_soft(self, _):
+    def _read_soft(self, rxc):
         """Soft PIO read ISR
         
         Read PIO FIFO into buffer.  Needs to be soft for memory views to  work
         Common to both channel 1 & 2
 
-        N.B the second parameter is a requirement of the schedule function. No use for it yet!
+        There must be at least 1 entry in the buffer.
+
         
         args:
-            self:
-            _: micropython.schedule requires an argument. 
+            rxc: received buffer count 
         """
-        rxc = self._smrx.rx_fifo() # get read count
-        if rxc == 0:
-            # report no data - and no orientation
-            self._callback(bytes(), 0)
-            return
         # set raw_buff limit to amount in fifo otherwise read will hang
         raw_buff = memoryview(self._rx_raw)[:rxc]
         self._smrx.get(raw_buff)  # read data into raw buffer
         # the raw buffer is in words - bits 0 - 7 data byte as received
         # bit 8 (the orientation bit) is ignored on all but first byte
-        # character overrun error is reported as all '1's
-       
+        # overrun error is reported as all '1's
+
         # side is saved as 1 or -1 e.g. s * 2 - 1
         # this is the orienation of the decoder wrt the DCC signal
         # orientation is invalid in case of character overrun (all '1's)
-        detector_side = ((raw_buff[0] & 0x100) >> 7) - 1
+        try:
+            detector_side = ((raw_buff[0] & 0x100) >> 7) - 1
+        except IndexError:
+            # just in case!
+            m = disable_irq()
+            self._ql = False # allow next read to be decoded
+            enable_irq(m)
+            return
 
         if rxc > self._max_buf:
-            # quietly truncate the buffer
+            # quietly truncate the buffer if over channel len
             raw_buff = raw_buff[:self._max_buf]
 
         x = 0
@@ -447,7 +470,7 @@ class RailComRead:
                 self._rx_buff[x] =  RailComRead._H4LU[rxd & 0xff]
                 x += 1
             except KeyError:
-                # no it's not!
+                # no it's not! overrun?
                 if (rxd & 0x200) != 0:
                     self._rx_buff[x] = RailComRead.ERR_OE
                 else:
@@ -456,6 +479,13 @@ class RailComRead:
                         if bin(rxd & 0xff).count('1') > 4
                         else RailComRead.ERR_WL)
                 x += 1
+                if x == 1: # first byte is in error - no point in going further
+                    # remainder of message not parsible
+                    break
         # buffer now translated - parsing for channel specific info done in callback
         self._callback(memoryview(self._rx_buff)[:x], detector_side)
+        m = disable_irq()
+        self._ql = False # allow next read to be decoded
+        enable_irq(m)
+
         return

@@ -42,7 +42,7 @@ class Led:
         LED_R: Red
         LED_G: Green
         LED_B: Blue
-"""
+    """
     LED_R = const(0)
     LED_G = const(1)
     LED_B = const(2)
@@ -139,7 +139,6 @@ class NeoLed(Led):
     RGB values may either be passed as a tuple or a single colour may be set or cleared.
 
     Setting a colour without a value will set the maximum(255).  Clearing a colour will set 0.
-
     """
 
     DEFAULT_B = const(50) # full brightness is rather bright!
@@ -223,8 +222,6 @@ class NeoString(NeoPixel):
 
         If the singleton already exists then it is returned.
         Otherwise None is returned.
-        args:
-            cls:
         """
         return cls._this_string
 
@@ -268,7 +265,6 @@ class NeoString(NeoPixel):
         dealt with elsewhere.
 
         Args:
-            self:
             report: a tuple containing the reference to the source object, the unique event code see: display
                 and additional information - format and content event specific
         """

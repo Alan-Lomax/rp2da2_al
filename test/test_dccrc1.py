@@ -11,7 +11,7 @@ It uses the machine module for hardware interaction and the device module for ev
 
 import _thread, time, sys
 
-
+from micropython import alloc_emergency_exception_buf
 
 from machine import Pin, ADC
 
@@ -21,7 +21,7 @@ from dcc_rc_pio import RailComRead
 from screen import Screen
 
 
-
+alloc_emergency_exception_buf(100)
 
 if __name__ == '__main__':
 
@@ -83,19 +83,17 @@ if __name__ == '__main__':
     def print_stats(reset = True):
         global time_stamp
         elapsed_time = time.ticks_diff(time.ticks_ms(), time_stamp)  
-        for block in (rc_ch1a, rc_ch1b):
+        for block in (rc_ch1b, ):
             counts = block.get_error_counts()
             cb_count = block.get_cb_count()
-            msg_count = block.get_msg_count()
             print(f'** Channel 1 block {block.get_name()} **')
             print(f"Call back rate: {(cb_count) * 1000 / elapsed_time:.2f} per sec")
-            print('Blank call backs', cb_count - msg_count)
             print("datagrams:",block.get_dg_list())
             for key, value in counts.items():
                 print(f'{ERR_CODE_DECODE[key]}\t{value}')
             
-            if msg_count > 0:
-                print(f"err. rate: {(sum(counts.values())/msg_count):.0%}")
+            if cb_count > 0:
+                print(f"err. rate: {(sum(counts.values())/cb_count):.0%}")
             if reset:
                 block.reset_stats()
         time_stamp = time.ticks_ms()

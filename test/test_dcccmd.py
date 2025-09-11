@@ -37,6 +37,7 @@ if __name__ == '__main__':
                 }
     DYN_INFO_DECODE = {
         RComCmdRsp.DYN_REAL_SPEED:'SPEED',
+        RComCmdRsp.DYN_TEMP:'TEMP',
         RComCmdRsp.DYN_DIRECTION:'DIRECTION',
         RComCmdRsp.DYN_RECEP_STATS:'RECEP_STATS',
         RComCmdRsp.DYN_TRACK_VOLT:'TRACK_VOLTS'
@@ -44,6 +45,7 @@ if __name__ == '__main__':
     }
     DYN_INFO_UNITS = {
         RComCmdRsp.DYN_REAL_SPEED:' km/h',
+        RComCmdRsp.DYN_TEMP:' degC',
         RComCmdRsp.DYN_DIRECTION:'',
         RComCmdRsp.DYN_RECEP_STATS:'%',
         RComCmdRsp.DYN_TRACK_VOLT:' V'
@@ -127,6 +129,8 @@ if __name__ == '__main__':
                 value = (rc_ch2._dyn_info[key] / 10) + 5 # voltage in V
             elif sub_index == RComCmdRsp.DYN_DIRECTION:
                 value = hex(rc_ch2._dyn_info[key])
+            elif sub_index == RComCmdRsp.DYN_TEMP:
+                value = rc_ch2._dyn_info[key] - 50
             else:
                 value = rc_ch2._dyn_info[key]
             print(f'Address {addr}, {DYN_INFO_DECODE[sub_index]} {value}{DYN_INFO_UNITS[sub_index]}')

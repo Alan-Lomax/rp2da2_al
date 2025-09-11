@@ -54,7 +54,8 @@ from wifi import WiFi
 def screen_splash():
     """create screen splash
     
-    It's done here to avoid unnessesary imports in screen modules."""
+    It's done here to avoid unnessesary imports in screen modules.
+    """
     hostname = network.hostname()
     ssid = WiFi.get_instance().get_ssid()
     l0 = (0, '  DCC Cmnd Stn', 0)
@@ -108,15 +109,16 @@ def main():
     mc.start(MQTT_LIST)
     while True:
         mc.read_poll()
-        for device in MQTT_LIST:
-            device.pub_check()
+        for agent in MQTT_LIST:
+            agent.pub_check()
 
 
 def main1():
     """ Main function for the RP2 second core application.
     
     This function sets up the screen and NeoString objects, and starts the DCC monitor.
-    It also enters a loop to read event reports and update the screen and NeoString accordingly."""
+    It also enters a loop to read event reports and update the screen and NeoString accordingly.
+    """
     s = Screen().get_instance()
     np = NeoString(Pin(22),2)
     trk_mon = TrkMon(sleep_pin, enable_pin, fault_pin, sense_pin)

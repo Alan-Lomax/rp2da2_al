@@ -102,7 +102,6 @@ def main():
         print (build, "invalid")
 
     mc = MQTTClient.get_instance()
-
     # List of MQTT agents to be started.
     MQTT_LIST = [Block(RComBlkDet('1011', RC1A_STATE_MC, c1a_rx_pin)),
                 Block(RComBlkDet('1012', RC1B_STATE_MC, c1b_rx_pin)),
