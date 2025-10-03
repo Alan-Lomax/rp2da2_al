@@ -46,7 +46,7 @@ _PIO_CU_D_FREQ = const(500_000)         # 500 kHz - 2 micro sec. tick period for
 _PIO_RX_FREQ = const(4_000_000)         # 4MHz - 16 * 250kHz bps rx clock rate for async. rx
    
 
-# memory mapped addresses and offsets of PIO registers (as defined the RP2040 datasheet)
+# memory mapped addresses and offsets of PIO registers (as defined in the RP2040 datasheet)
 PIO0_BASE = const(0x50200000)
 """ PIO  0 base address"""
 PIO1_BASE = const(0x50300000)
@@ -62,7 +62,7 @@ class RailComRead:
     This class schedules and executes RailComm datagram read activities during the cutout period. During
     the cutout period, the DCC power signal is ceased and the two DCC lines are short circuited allowing the 
     RailCom current signal to be generated and detected. On the command station the cutout is instigated by the
-    enable signal to the DRV8874 being set low. This cutout siganl being low is used directly when detecting
+    enable signal to the DRV8874 being set low. This cutout signal being low is used directly when detecting
     on the command station. A remote block detector uses the RailCom detector output to detect the cutout.
 
     A RailCom reader object works on either on Channel 1 (block) or Channel 2 (central/global) but not both. 
@@ -79,8 +79,10 @@ class RailComRead:
     a RailCom encoder (e.g. DCC decoder) is actively transmitting.
 
     Each RailCom reader uses two PIO state machines.  One times the cutout and the second is the serial
-    RailCom message receiver. Both state machines need to be on the same PIO for RP2040 and are assigned to
-    consecutive state machine numbers. A PIO block has 4 state machines and can run two readers. The 
+    RailCom message receiver. Both state machines need to be on the same PIO block for RP2040 and
+    are assigned to consecutive state machine numbers.
+    
+    A PIO block has 4 state machines and can run two readers. The 
     The cutout timers will be on the state machine numbers 0 & 2 of the PIO block and the associated receivers on state machine
     numbers 1 & 3. (Note that MicroPython numbers all state machines sequentially from 0 - e.g. it refers to the first 
     state machine on the second PIO as no. 4.)
@@ -110,7 +112,7 @@ class RailComRead:
     # class constant
 
     # protocol bytes - only applicable to Channel 2
-    # decoder responses
+    # these are internal values post Hamming W4 translation
     # bit 7 set to differentiate from datagram value 6 bit translation
     ACK =  const(0x80)
     BUSY = const(0x81)
@@ -173,7 +175,7 @@ class RailComRead:
 
         Constructs a reader for Channel 1 (block detector) or Channel 2 (central detector) using two PIO state machines.
 
-        The cutout monitor state machine runs on the supplied state machine number.  The receive statemachine
+        The cutout monitor state machine runs on the supplied state machine number.  The receive state machine
         runs on the number + 1.
 
         If no cutout pin is supplied for channel 1 then it's assumed we are on an accessory controller and
@@ -232,13 +234,12 @@ class RailComRead:
         """
         self._rx_buff = bytearray(6) # translated buffer - max is 6 bytes for channel 2
         self._rx_raw = array.array('I', range(8)) # raw buffer for PIO - 8 words to match FIFO
-        self._callback = cb
+        self._callback = cb # channel specific datagram interpreter callback
         self._channel = channel
         self._max_buf = 2 if channel == 1 else 6 # max number of bytes for this channel
-
+        self._ql = False            # queue lock - to protect against race
         self._sm.active(True)       # start both state machines
         self._smrx.active(True)
-        self._ql = False            # queue lock - to protect against race
 
     @rp2.asm_pio() 
     def _cut_out1_com():
@@ -281,9 +282,7 @@ class RailComRead:
         28 - cutout start (monitored here)
         28 + 47  = 75  - enable receiver for ch1
         28 + 152 = 180 - disable receiver for ch1 (ch1 end @ 177, ch2 start 193)
-        28 + 152 + 280 = 460 application start read (ch2 end 454)
         28 + 446 = 474 cutout ends (timed in DCCGen)
-        28 + 152 + 280 + 20 = 480 repeat wait for enable going low.
         
 
         The clock is 500 kHz. 2 µs per tick
@@ -387,7 +386,7 @@ class RailComRead:
         17 instructions
         """
         wait(1, irq, rel(4))    [0] # wait to be enabled
-        wrap_target()               # restart calculated on basis that this lables 2nd instruction
+        wrap_target()               # restart calculated on basis that this labels 2nd instruction
 
         label("await_start")
         # we want a confirmed start bit to be at least 3/4 bit time 
@@ -421,7 +420,7 @@ class RailComRead:
 
     def _read_isr(self, _):
         """Hard ISR to ensure restart asap after window end"""
-        self._smrx.exec(self._restart)
+        self._smrx.exec(self._restart) # belt and braces reset!
         self._smrx.restart() # seems ok now shouldn't affect RX FIFO
         rc = self._smrx.rx_fifo()
         if (not self._ql) and rc > 0: # discard blank reads
@@ -435,7 +434,6 @@ class RailComRead:
         Common to both channel 1 & 2
 
         There must be at least 1 entry in the buffer.
-
         
         args:
             rxc: received buffer count 
@@ -480,7 +478,7 @@ class RailComRead:
                         else RailComRead.ERR_WL)
                 x += 1
                 if x == 1: # first byte is in error - no point in going further
-                    # remainder of message not parsible
+                    # remainder of message not parsable
                     break
         # buffer now translated - parsing for channel specific info done in callback
         self._callback(memoryview(self._rx_buff)[:x], detector_side)

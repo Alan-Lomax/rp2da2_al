@@ -15,6 +15,8 @@ This module contains the functions and classes for DCC RailCom block detection o
         You should have received a copy of the GNU General Public License along with this program.
         If not, see <http://www.gnu.org/licenses/>.
 """
+import asyncio
+
 from machine import  Timer
 from micropython import const
 
@@ -88,12 +90,41 @@ class RComBlkDet(Device):
         self._no_resp_count = _MAX_NO_READ
         self.reset_stats()
 
-        # block state may be unknown, empty, occupied (no channel 1 data), occupied with channel 1 data
+        """block state may be unknown, empty, occupied (no channel 1 data),
+        occupied with channel 1 data"""
         self._blk_state = (Device.UNKNOWN, None) # block state is status and RailCom info if available.
-        self._rc = RailComRead(rc_sm_num, rx_pin,  self._rail_com_ch1_msg, channel = 1, cu_pin=enable_pin)
+        self._rc = RailComRead(rc_sm_num, rx_pin,
+                                self._rail_com_ch1_msg,
+                                channel = 1,
+                                cu_pin=enable_pin)
         self._load_timer.init(mode = Timer.PERIODIC, period = _TIMER_PERIOD, callback = self._load_check)
 
+        self._ready_flag = asyncio.ThreadSafeFlag() # used to signal new state available to comms agent
+
         super().__init__(blk_name, RComBlkDet.DEVICE_TYPE)
+
+    async def wait_for_flag(self):
+        """ Wait for the new state available flag
+
+        This waits for the asynchio thread safe flag to be set.
+        
+        """
+        await self._ready_flag.wait()
+        return
+    
+    def report_event(self, event, data):
+        """ Report Event
+        
+        This overrides the Device.report_event method.
+        It sets the thread safe flag to indicate block status change.
+        
+        args:
+            event:  updated Block status code.
+            data:   a tuple containing address type, address & orientation  
+        
+        """
+        self._ready_flag.set()
+        super().report_event(event, data)
 
     def get_error_counts(self):
         """ Get Error Counts
@@ -116,7 +147,8 @@ class RComBlkDet(Device):
     def get_dg_list(self):
         """ Get Datagram list
         
-        Diagnostic method to retrieve the list of datagram types that have been  decoded.
+        Diagnostic method to retrieve the list of datagram types that have been
+        decoded.
         
         returns:
             the set of datagram ids

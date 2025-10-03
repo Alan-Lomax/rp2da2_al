@@ -27,7 +27,7 @@ It also uses the dcc_command, dcc_rc_ch2, neoled, screen, mqtt_cmd, mqtt, mqtt_c
 
 """
 # python imports
-import _thread, sys, network
+import _thread, sys, network, asyncio
 
 # micropython imports 
 from micropython import const
@@ -71,16 +71,19 @@ def screen_splash():
     return (l0, l1, l2, l3)
 
 
-def main():
+async def main():
     """Main function for the RP2 first core application.
 
     This function sets up the MQTT client and starts the main loop.
     It also sets up the DCC command and RailCom command response objects.
-    The main loop reads the MQTT client and publishes the power state if it has changed.
+    The main loop reads the MQTT client and publishes the power state
+    if it has changed.
     """
 
     DCC_STATE_MC = const(0) #DCC generation - First state machine on PIO 0
     RC2_STATE_MC = const(6) # RailCom Global detector state machine - 3rd on PIO 1
+
+    dcc_pin = Pin(20, Pin.OUT) # common to both Arduino Nano Connect & Pico
     
     build = sys.implementation._build # get build description
     if build.find("PICO") > -1:
@@ -89,7 +92,7 @@ def main():
         c2_rx_pin = Pin(16, Pin.IN)
         _ = Pin(17, Pin.IN)
     elif build.find("NANO") > -1:
-        # Detector pin allocations - Arduino Nano  format
+        # Detector pin allocations - Arduino Nano Connect format
         # orientation pins are initiated but not specifically allocated
         c2_rx_pin = Pin(15, Pin.IN)
         _ = Pin(16, Pin.IN)
@@ -105,12 +108,7 @@ def main():
                     Will("track/state", MQTTClient.QoS1),
                     Cab("cab/+/+/#", MQTTClient.QoS1)]
   
-    mc = MQTTClient.get_instance() # this will create the MQTT client
-    mc.start(MQTT_LIST)
-    while True:
-        mc.read_poll()
-        for agent in MQTT_LIST:
-            agent.pub_check()
+    await MQTTClient.get_instance().run(MQTT_LIST)  # runs forever
 
 
 def main1():
@@ -119,6 +117,8 @@ def main1():
     This function sets up the screen and NeoString objects, and starts the DCC monitor.
     It also enters a loop to read event reports and update the screen and NeoString accordingly.
     """
+    fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true - DRV8874 Open Drain OP
+    sense_pin = ADC(Pin(26)) # current sense input
     s = Screen().get_instance()
     np = NeoString(Pin(22),2)
     trk_mon = TrkMon(sleep_pin, enable_pin, fault_pin, sense_pin)
@@ -135,10 +135,9 @@ def main1():
 
 if __name__ == '__main__':
     # DRV8874 pin allocations - common to Pico & Arduino Nano Connect
+    # sleep and enable are used by drivers in both cores
+    # they are read only for everything but DCCCommand
     sleep_pin = Pin(19, Pin.OUT, value = 0)   # set sleep mode initially
     enable_pin = Pin(18, Pin.OUT, value = 1)
-    dcc_pin = Pin(20, Pin.OUT)
-    fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true - DRV8874 Open Drain OP
-    sense_pin = ADC(Pin(26)) # current sense input
     _thread.start_new_thread(main1,())
-    main()
+    asyncio.run(main())

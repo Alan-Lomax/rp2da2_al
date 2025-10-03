@@ -195,7 +195,6 @@ class Device():
             - data, depends on source object and event
 
         Args:
-            cls:
             wait:   if True wait for an event report otherwise return immediately
 
         Returns:
@@ -222,7 +221,6 @@ class Device():
         used __class__ but that would be more complex.
 
         Args:
-            self:
             name: string containing the device name
             type: character specifying the type of device (i.e. class of child)
         """
@@ -233,10 +231,7 @@ class Device():
 
     def get_name(self):
         """Get the device name
-        
-        args:
-            self:
-            
+
         returns:
             the device name as a string
         """
@@ -244,10 +239,7 @@ class Device():
     
     def get_type(self):
         """Get the device type
-        
-        args:
-            self:
-            
+
         returns:
             the device type as a single character string
         """
@@ -260,7 +252,6 @@ class Device():
         a 'not implemented' error will be raised when called.
         
         args:
-            self:
             v: the value to be writen if supplied
         
         raises:
@@ -273,10 +264,7 @@ class Device():
         
         This must be superseded by a bound method in an inheriting class. Otherwise
         a 'not implemented' error will be raised when called.
-        
-        args:
-            self:
-        
+
         raises:
             NotImplementedError: if not overridden
         """
@@ -291,7 +279,6 @@ class Device():
         :raise ThreadQError:  The queue is full
 
         args:
-            self:
             event:  event or instruction code - a Device class constant
             data:   event data to qualify code - device dependent  
         """

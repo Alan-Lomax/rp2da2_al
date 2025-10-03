@@ -83,7 +83,7 @@ if __name__ == '__main__':
     def print_stats(reset = True):
         global time_stamp
         elapsed_time = time.ticks_diff(time.ticks_ms(), time_stamp)  
-        for block in (rc_ch1b, ):
+        for block in (rc_ch1a, rc_ch1b ):
             counts = block.get_error_counts()
             cb_count = block.get_cb_count()
             print(f'** Channel 1 block {block.get_name()} **')

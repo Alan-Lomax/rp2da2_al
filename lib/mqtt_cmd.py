@@ -29,8 +29,7 @@ Sessions are clean - i.e. no context saved between sessions.
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
-from micropython import const
+import asyncio
 
 from mqtt import MQTTAgent
 
@@ -40,7 +39,9 @@ from dcc_command import DCCCommand
 
 
 class Power(MQTTAgent):
-    """Manage Power Subscription and publication
+    """Layout Power Agent
+    
+    This manages the power subscription and publication.
     
     There is only one of these, but singularity is not enforced."""
 
@@ -65,8 +66,14 @@ class Power(MQTTAgent):
             raise ValueError("QoS must be either MQTTClient.QoS0 or MQTTClient.QoS1")
         super().__init__(topic_filter, QoS)
         self._publish_topic = pub_topic
-        self._power_state = None    # to indicate first time
         self._dcc = DCCCommand.get_instance()
+
+
+    def _create_pub_check(self):
+        """Overrides version in base class"""
+        
+        asyncio.create_task(self._pub_check())
+        return
         
 
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
@@ -81,39 +88,28 @@ class Power(MQTTAgent):
             ret_flag: True if this is a retained publication
             payload: the payload of the publication as a string
         """
-
-        if ret_flag == MQTTClient.RETAIN:
-            # this is a message retained by the broker
-            # we won't act on it
-            # but send actual state instead
-            self._power_state = None # to force power state send on next check
-            return
         try:        
-            self._dcc.power(Power.ON_OFF[payload])
+            p = Power.ON_OFF[payload]
         except KeyError:
             # invalid payload
             return
 
-    def pub_check(self):
+        if (ret_flag == MQTTClient.RETAIN and
+            p == DCCCommand.ON):
+            # this is aa 'on' message retained by the broker
+            # we only act on a retained message if it's off
+            return
+        self._dcc.power(p)
+
+    async def _pub_check(self):
         """ Check for publication.
         
-        Publish the power state if first call or changed since last check.
-
-        returns:
-            True if the agent has published else False
+        Publish the power state on notification of change
         """
-        power = self._dcc.power() # get current power
-        tx_payload = "ON" if power == DCCCommand.ON else "OFF"
-        if self._power_state is None:
-            self._client.publish(self._publish_topic, tx_payload, True, MQTTClient.QoS1)
-            self._power_state = power   # save power state for next call
-            return
-        if power == self._power_state:
-            # unchanged
-            return False
-        self._client.publish(self._publish_topic, tx_payload, True, MQTTClient.QoS1)
-        self._power_state = power   # save power state for next call
-        return True
+        while True:
+            await self._dcc.wait_for_flag()
+            tx_payload = "ON" if self._dcc.power() == DCCCommand.ON else "OFF"
+            await self._client.publish(self._publish_topic, tx_payload, True, MQTTClient.QoS1)
         
 
 class Cab(MQTTAgent):

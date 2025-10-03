@@ -30,9 +30,8 @@ All entries are mandatory. Order is not significant. Alter myxxxxx to match the 
 
 """
 
-
+import asyncio
 from micropython import const
-from machine import Timer
 import network
 from device import Device
 from led import Led, TriLed
@@ -41,14 +40,12 @@ from led import Led, TriLed
 import json
 
 
-_REOPEN_TIME = const(5000)    # wait 5 seconds 
-
 class WiFi(Device):
     """WiFi Connection
     
     This singleton class manages the WiFi Connection. It connects using the 
     credentials as held in the wifi configuration file.
-    The connection is checked every 5 seconds and if the connection is lost, it will attempt to reconnect.
+    The connection is checked periodically and if the connection is lost, it will attempt to reconnect.
     The LED is set to red when not connected and cleared when connected.
     The LED is controlled by the TriLed class.
 
@@ -83,8 +80,6 @@ class WiFi(Device):
         This initialises the WiFi connection using the credentials from the configuration file.
         If the singleton already exists then an exception is raised.
         The LED is set to red if the connection is not established.
-        A timer is set up to check the connection every 5 seconds. If the connection is lost,
-        it will attempt to reconnect.
         """
         if (WiFi._wi_fi) != None and (WiFi._wi_fi is not self):
             raise RuntimeError('only one instance allowed')
@@ -106,6 +101,7 @@ class WiFi(Device):
         else:
             self._connected = True
         #self._check_timer = Timer(mode = Timer.PERIODIC, period = _REOPEN_TIME, callback = self._check_OK)
+        asyncio.create_task(self.check_OK())
 
     def report_event(self, event, data):
         """Report an event
@@ -134,32 +130,33 @@ class WiFi(Device):
         """
         return(self._credentials[0])
 
-    def check_OK(self):
+    async def check_OK(self):
         """Check if the WiFi is connected
 
         This checks if the WiFi is connected. If it is newly connected, the LED is cleared.
         If it is not connected, the LED is set to red and the connection is attempted.
         If the connection is not established, the active state of the WiFi is toggled to force a reconnect.
         
-        It is intended that this is called if required by comms client code.
-            
+        This runs forever as a task under asyncio
         """
-        if self._wlan.isconnected() and self._connected:
-            return  # nothing to do
-        if self._wlan.isconnected():
-            # turn red led off
-            self.report_event(Device.WF_SET_LED, (Led.LED_R, 0))
-            self._connected = True
-            return
-        # not connected - do we need to report it
-        if self._connected:
-            # red led on
-            self.report_event(Device.WF_SET_LED, (Led.LED_R, 1))
-            self._connected = False
-        if self._wlan.active(): # toggle active and await next tick
-            self._wlan.active(False)
-            return
-        self._wlan.active(True)
+        while True:
+            await asyncio.sleep(5)  # 5 secs between checks
+            if self._wlan.isconnected() and self._connected:
+                continue  # nothing to do
+            if self._wlan.isconnected():
+                # turn red led off
+                self.report_event(Device.WF_SET_LED, (Led.LED_R, 0))
+                self._connected = True
+                continue
+            # not connected - do we need to report it
+            if self._connected:
+                # red led on
+                self.report_event(Device.WF_SET_LED, (Led.LED_R, 1))
+                self._connected = False
+            if self._wlan.active(): # toggle active and await next tick
+                self._wlan.active(False)
+                continue
+            self._wlan.active(True)
 
-        self._wlan.connect(*self._credentials)
+            self._wlan.connect(*self._credentials)
 

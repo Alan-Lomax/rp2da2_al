@@ -87,11 +87,8 @@ class CommandPacket:
         This returns the most recently serialised DCC command.  It's primary purpose
         is to allow the RailComm Channel 2 response processor to determine the command
         that initiated the response.
-        
-        args:
-            cls:
             
-        retruns:
+        returns:
             the last commannd
         """
         
@@ -341,7 +338,6 @@ class FGrp1Command(CommandPacket):
             Parameters not validated here.
 
         args:
-            self:
             address: DCC address of target decoder
             f_num:   The group 1 function number to be set or unset
             state:  may be set or unset (1 or 0)
@@ -391,9 +387,6 @@ class CV_Access(CommandPacket):
     Objects in this class are single use.  I.e once the CV access is complete they may
     dropped for garbage collection.
 
-    Note:
-        Only read CV implemented at the moment.
-
     TODO:
       - do we need to look at accessory CVs too.
 
@@ -421,11 +414,11 @@ class CV_Access(CommandPacket):
             'w': BYTE_WRT}
 
     def __init__(self, address, cv, *, operation = 'r', value = 0):
-        """Construct a  Programme on Main Command
+        """Construct a  Program on Main Command
 
         This constructs a POM command. It calls __init__ in the base class. It sets the decoder address, 
         the CV number, the operation (read or write), and the new value.
-        At the moment only single CV read operations are supported.
+        At the moment only single byte CV operations are supported.
         
         note:
             Parameters not validated here.

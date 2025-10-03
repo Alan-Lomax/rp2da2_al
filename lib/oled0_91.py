@@ -103,13 +103,13 @@ class OLED_0in91:
             cmd: The command to write to the display.
         """
         self._cmdBuff[1] = cmd
-        l = self._i2c.writeto(self._addr, self._cmdBuff)
-        assert l == len(self._cmdBuff), 'i2c write cmd NACK'
+        self._i2c.writeto(self._addr, self._cmdBuff)
+
 
     def _write_data(self, buf):
 
-        l = self._i2c.writeto(self._addr, buf)
-        assert l == len(buf), f'i2c write data NACK l {l}'
+        self._i2c.writeto(self._addr, buf)
+
 
     def _init_display(self):
         """Initialize display

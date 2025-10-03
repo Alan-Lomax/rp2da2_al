@@ -30,7 +30,7 @@ It also uses the dcc_rc_ch1, neoled, screen, mqtt_cmd, mqtt, mqtt_client, and de
 
 """
 # python imports
-import _thread, sys, network, gc, time
+import _thread, sys, network, asyncio
 
 # micropython imports 
 from micropython import const,alloc_emergency_exception_buf
@@ -72,12 +72,13 @@ def screen_splash():
     return (t0, t1, t2, t3)
 
 
-def main():
+async def main():
     """Main function for the RP2 first core (core 0) application.
 
+    Hardware allocations are defined for IO Pins and PIO State machines.
     This function sets up the MQTT client and starts the main loop.
-    It also sets up the DCC command and RailCom command response objects.
-    The main loop reads the MQTT client and publishes the power state if it has changed.
+    MQTT agents are set for the channel 1 block detectors
+    The main loop polls the MQTT client
     """
     RC1A_STATE_MC = const(0) #RailCom Block A (channel 1) detector state machine number
 
@@ -101,25 +102,20 @@ def main():
     else:
         print (build, "invalid")
 
-    mc = MQTTClient.get_instance()
     # List of MQTT agents to be started.
     MQTT_LIST = [Block(RComBlkDet('1011', RC1A_STATE_MC, c1a_rx_pin)),
                 Block(RComBlkDet('1012', RC1B_STATE_MC, c1b_rx_pin)),
                 Will("track/state", MQTTClient.QoS1)]
-    
-    mc.start(MQTT_LIST)
 
-    while True:
-        mc.read_poll()
-        for agent in MQTT_LIST:
-            agent.pub_check()
+    await MQTTClient.get_instance().run(MQTT_LIST)  # runs forever
 
 
 def main1():
     """ Main function for the RP2 second core (core 1) application.
     
     This function sets up the screen and NeoString objects.
-    It also enters a loop to read event reports and update the screen and NeoString accordingly.
+    It also enters a loop to read event reports and update the screen and
+    NeoString accordingly.
     """
     s = Screen().get_instance()
     #np = NeoString(Pin(22),2)
@@ -132,4 +128,4 @@ def main1():
 
 if __name__ == '__main__':
     _thread.start_new_thread(main1,())
-    main()
+    asyncio.run(main())

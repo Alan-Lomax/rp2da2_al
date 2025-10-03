@@ -1,36 +1,35 @@
 """DCC module
     :author: Paul Redhead
 
-This module provides high level APIs. It and associated modules in the package contain the functions
-and classes for DCC command station.
+This module provides high level APIs. It and associated modules in the
+package contain the functions and classes for DCC command station.
 
-A command comprises a preamble, one or more instruction/data bytes and an error detection (checksum) byte.
-Each byte is preceeded by a single '0' bit.
+A command comprises a preamble, one or more instruction/data bytes and
+an error detection (checksum) byte. Each byte is preceeded by a single '0' bit.
 The checksum is followed by a single '1' bit which may be the initial bit of
-the next preamble. The preamble is at least 14 '1' bits. Note that in this implementation the pre-amble is
-not interrupted by the cutout so the preamble length doesn't need to be lengthened.
+the next preamble. The preamble is at least 14 '1' bits. Note that in this
+implementation the pre-amble is not interrupted by the cutout so the preamble
+length doesn't need to be lengthened.
 
-
-This DCC implementation has a limited set of features.  E.g. it doesn't include bit stretching
-for DC vehicles on address 0, 14/28 speed steps, any service mode functions or accessory controller
-commands. We allow for a maximum command sequnece of 11 bytes including check sum. There is limited
-support for Programming on Main.
+This DCC implementation has a limited set of features.  E.g. it doesn't include
+bit stretching for DC vehicles on address 0, 14/28 speed steps, any service mode
+functions or accessory controller commands. We allow for a maximum command
+sequnece of 11 bytes including check sum. There is limited support for
+Programming on Main.
 
 RCN-210 &  RCN-211 partly apply as appropriate. 
 
 See also NMRA Standards S 9.2 and S 9.2.1. S 9.2.1.1 is not supported.
 
-The module makes full use of a RP2xxx PIO for DCC signal encoding and serialisation. If RailCom is enabled
-a second PIO is used for this. 
+The module makes full use of a RP2xxx PIO for DCC signal encoding and
+serialisation. If RailCom is enabled a second PIO is used for this. 
 
-The DCC commands are serialised to the track via the DCC generation driver, which also inserts
-the RailCom cutout if in use.
+The DCC commands are serialised to the track via the DCC generation driver,
+which also inserts the RailCom cutout if in use.
 
-
-Three RP2040 PIO state machines are used by driver modules, one for DCC generation and
-two for RailCom. The two RailCom state machines must be on the same PIO block. 
-
-
+Three RP2040 PIO state machines are used by driver modules, one for DCC
+generation and two for RailCom. The two RailCom state machines must be
+on the same PIO block. 
 """
 """        Copyright (C) 2023, 2024, 2025 Paul Redhead
 
@@ -43,7 +42,7 @@ two for RailCom. The two RailCom state machines must be on the same PIO block.
         You should have received a copy of the GNU General Public License along with this program.
         If not, see <http://www.gnu.org/licenses/>.
 """
-
+import asyncio
 
 from micropython import const
 from machine import Pin
@@ -56,9 +55,9 @@ from dcc_cmd_pio import DCCCmdTx
 class DCCCommand():
     """ DCC Command
 
-    This class manages the DCC command packets. It provides the APIs for the registration
-    of DCC commands to be serialised. It performs the scheduling and tranmission of
-    command packets.
+    This class manages the DCC command packets. It provides the APIs for the
+    registration of DCC commands to be serialised. It performs the scheduling
+    and tranmission of command packets.
 
     Attributes:
         FWD:    Forward direction
@@ -85,9 +84,6 @@ class DCCCommand():
 
         This returns the singleton DCC Command instance.
 
-        Args:
-            cls:
-
         Returns:
             The DCC Command instance
         """
@@ -99,7 +95,7 @@ class DCCCommand():
         This initialises the DCC command manager singleton.  An attempt to create a 2nd
         instance will cause a runtime error.
         
-        Pins and timers are initialised. The dictionary for the packet list is created and the 
+        The dictionary for the packet list is created and the 
         FIFO buffer allocated.
 
         If the enable pin is not supplied, it must be hard wired to true (high) on the DRV8874 and 
@@ -107,7 +103,6 @@ class DCCCommand():
         The enable pin, and RailCom channel 2 processor must be supplied for RailCom.
         
         Args:
-            self:
             DCC_pn: Pin number allocated for DCC output.
             sleep_pn: Pin number allocated to the booster for powering the track
             gen_sm_num: PIO state machine number to be used for DCC Generation
@@ -134,63 +129,84 @@ class DCCCommand():
         # cutout period ends.
         enable_pn.irq(self._nxt_packet, Pin.IRQ_RISING)
 
+        self._ready_flag = asyncio.ThreadSafeFlag()
+
+    async def wait_for_flag(self):
+        """ Wait for the new state available flag
+
+        This waits for the asynchio thread safe flag to be set. Setting the flag is
+        triggered by a change to the power on/off status.
+        """
+        await self._ready_flag.wait()
+        return
+
     def power(self, p = None):
         """DCC Power On/Off
 
         Start and stop command packet transmission scheduling.
         PIO stop start and power to track delegated to the DCC tx class (pio_pwr).
+
+        Changing the power state will cause the new power state available flag to be set.
         
         args:
             p: 1 for power on, 0 for power off, None for get power status
 
         returns:
             power status as held by the DCC generator
-
         """
         if p is None:
+            # power is none
             return self._dcc_gen_pio.pio_pwr()
+        # an explicit command always generates a response
+        self._ready_flag.set()
+
+        if p == self._dcc_gen_pio.pio_pwr():
+            # but don't do anything if no change!
+            return
         
-        r = self._dcc_gen_pio.pio_pwr(p)  # start pio before send!
+        r = self._dcc_gen_pio.pio_pwr(p)  # start/stop pio first (before send!)
 
         if p == DCCCmdTx.ON:
-            # the normal sequence of command packets will be triggered at the completion of the
-            # idle packet
+            # the normal sequence of command packets will be triggered
+            # at the completion of the idle packet
             self._idle_packet.send()
             # set an iterator
             self._packet_iter = iter(self._packet_list)
 
         # no specific action here for power off
-
         return r
 
     def set_speed(self, address, dir, speed = 0):
         """Set Speed (including direction)
         
-        If there is a speed command object for the adressed decoder in the list already
-        the object is updated otherwise a new speed command is created.  The input is validated.
-        The packet generated will be for a 128 step speed setting and
+        If there is a speed command object for the adressed decoder in the
+        list already the object is updated otherwise a new speed command
+        is created.  The input is validated.  The packet generated will be
+        for a 128 step speed setting and
         decoders must be configured for 28/128 speed steps.
 
         See NMRA S-9.2.1  Section 2.3.2.1
         
         args:
-            self:
             address: the address of the decoder - may be short or long
-            dir:    the direction - forward or reverse - stop is treated as invalid
+            dir:    the direction - forward or reverse - stop is treated as
+            invalid
             speed: the speed to be set - range 0 to 127 - default 0
               
         returns:
-            True if validation is passed and the command is added to the list or modified. False
-            if validation fails.
+            True if validation is passed and the command is added to the list
+            or modified. False if validation fails.
         """
         # a bit of defensive programming
         if not (1 <= address <= CommandPacket.MAX_LONG_ADDR):
             return False
         if not dir in (DCCCommand.FWD, DCCCommand.REV):
             return False
+        if not (0 <= speed < 128):
+            return False
         
         # speed direction packet list entry's key is 'S', address
-        # speed / direction packet - 1 or 2 address bytes, 2 instruction bytes    
+        # speed / direction packet - 1 or 2 address bytes, 2 instruction bytes  
         try:
             self._get_cmd((SpeedCommand.TYPE, address)).update(dir, speed)
         except KeyError:
@@ -201,23 +217,23 @@ class DCCCommand():
     def set_fg1(self, address, f_num, state):
         """Set Function Group 1
         
-        This sets or clears a function in group 1.  The forward light is usually function 
-        number 0.
+        This sets or clears a function in group 1.  The forward light
+        is usually function number 0.
 
-        If there is a function group 1 command in the packet list for the addressed decoder it is
-        updated. Otherwise the command is added to the list.
+        If there is a function group 1 command in the packet list for the
+        addressed decoder it is updated. Otherwise the command is added
+        to the list.
 
         See NMRA S-9.2.1  Section 2.3.4
         
         args:
-            self:
             address: the address of the decoder - may be short or long
             f_num:  function number to set or clear
             state:  1 for set, 0 for clear
 
         returns:
-            True if validation is passed and the command is added to the list or modified. False
-            if validation fails.   
+            True if validation is passed and the command is added
+            to the list or modified. False if validation fails.   
         """
         # a bit of defensive programming
         if not (1 <= address <= CommandPacket.MAX_LONG_ADDR):
@@ -245,12 +261,10 @@ class DCCCommand():
         this is not true.
 
         args:
-            self:
-            address:
+            address: decoder address
             cv_num: cv number as entered - users count from 1, DCC counts from 0!
 
         """
-
         if not (1 <= cv_num <= 1024):
             return False
         return self._pom_cmd(CV_Access(address, cv_num - 1))
@@ -269,13 +283,15 @@ class DCCCommand():
             address:
             cv_num: cv number as entered - users count from 1, DCC counts from 0!
             new_val: the new value for the CV
-
         """
         if not (1 <= cv_num <= 1024):
             return False
         if not (0 <= new_val <= 255):
             return False
-        return self._pom_cmd(CV_Access(address, cv_num - 1, operation = 'w', value = new_val))
+        return self._pom_cmd(CV_Access(address,
+                                       cv_num - 1,
+                                       operation = 'w',
+                                       value = new_val))
         
     def _get_cmd(self, key):
         """Get a command from the packet list
@@ -294,13 +310,14 @@ class DCCCommand():
     def _pom_cmd(self, command):
         """Process Program on Main command
 
-        The response to a POM command may be delayed. The decoder does not have to put the POM
-        response in the immediately following window and may respond following a subsequent command to that
-        decoder.
+        The response to a POM command may be delayed. The decoder does not
+        have to put the POM response in the immediately following window and
+        may respond following a subsequent command to that decoder.
         
-        To ensure that there is a subsequent command the address is checked to see if in the active list.
-        The command will be rejected if the address is not in the active list or
-        there is a POM command already being processed.
+        To ensure that there is a subsequent command the address is checked
+        to see if in the active list. The command will be rejected if the
+        address is not in the active list or there is a POM command already
+        being processed.
 
         return:
             True if command accepted

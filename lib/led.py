@@ -110,6 +110,7 @@ class TriLed(Led):
         A value of > 0 indicates led on. 0 led off.  This is inverted at the pin which is 0 for on.
         args:
             colour: The colour to set.  This should be one of TriLed.LED_R, TriLed.LED_G or TriLed.LED_B.
+            value: 0 or 1 for on or off.  Defaults to 1.
         """
         try:
             self._led_lu[colour].value(0 if value > 0 else 1)
@@ -151,8 +152,6 @@ class NeoLed(Led):
         args:
             led_string: The NeoPixel string to which this LED belongs.
             string_index: The index of the LED in the string.
-
-
         """
         self._rgb = [0, 0, 0]   # set initial RGB values.
         self._string = led_string # this is the neopixel string
@@ -286,13 +285,6 @@ class NeoString(NeoPixel):
     """A dictionary to decode the events into LED actions.
     """
     
-
-
-
-
-
-
-
 
 if __name__ == '__main__':
     l = TriLed.get_instance()

@@ -4,11 +4,63 @@ Model Railway Distributed Automation for RP2 (and other MicropPython MCUs).
 
 ---
 
+## Hardware and Environment
+
+The primary target Micro Controller Units for this project are Raspberry Pi RP2
+based and run MicroPython V1.26 or later. Testing has principly taken place on
+Pico, Pico W and Arduino Nano RP2040 Connect platforms. Elements of the application
+may run on other MicroPython capabable platforms with no, or minor modifications.
+DCC and RailCom components use the RP2 Programmable IO peripheral so must be run
+on an RP2 based MCU. RP2350 based MCUs such as the Pico 2 W should be acceptable
+but this is as yet untested.
+
+A booster is required to convert the DCC signal into a form suitable for
+suppling power directly to track. The reference booster is the Texas
+Instruments DRV8874 mounted on a Pololu header. This may deliver up to 2.9 A
+instantaniously but is only rated for 2.1 A continuous load. You will also
+need a suitable DC power supply.
+
+RailCom detectors have been specifically designed for this project with circuit
+schematics and PCB designs for both global and local detectors. The PCB designs
+and applications have been designed around a standard set of GPIO pin
+allocations. See the following tables.
+
+| GPIO Pin | Pico / Pico W |Arduino Nano|
+| --- | --- | --- |
+|0| - | RailCom ch 1 (a) rx |
+|1| - | RailCom ch 1 (a) orientation|
+|4| OLED I2C0:sda | - |
+|5| OLED I2C0:scl |- |
+|12| - | OLED I2C0:sda |
+|13| - | OLED I2C0:scl |
+|14|RailCom ch 1 (a) rx | - |
+|15|RailCom ch 1 (a) orientation|RailCom ch 1 (b) / ch 2 rx|
+|16|RailCom ch 1 (b) / ch 2 rx|RailCom ch 1 (b) orientation|
+|17|RailCom ch1 (b) orientation| - |
+
+When configured as a command station one channel 2 global detector is
+available (ch 2 rx in the above table). When configured for block
+detection two local channel 1 detectors are available (ch 1 (a/b) in the
+above table).
+
+| Pin(Pico & Nano)| Function|
+|---|---|
+|GPIO 18|DRV8874 EN|
+|GPIO 19|DRV8874 nSleep|
+|GPIO 20|DRV8874 PH|
+|GPIO 21|DRV8874 nFault|
+|GPIO 26|DRV8874 Current Sense|
+|Ground|DRV8874 iMode|
+|Ground|DRV8874 pMode|
+|NC|DRV8874 Vref|
+|GPIO 22|NeoPixel chain|
+
 ## Software Modules
 
 ### Utility & UI
 
-**device** - This provides the Device class, a base class for hardware device drivers and similar objects.
+**device** - This provides the Device class, a base class for hardware device
+drivers and similar objects.
 
 **oled0_91** - Module for 0.91 inch OLED on i2c
 
@@ -22,9 +74,10 @@ displays the command station track status.
 
 **mqtt_client** - This provides a simple MQTT client.
 
-**mqtt\*** - Other MQTT modules provide interfaces for MQTT devices and agents.  These may be used
-with JMRI but JMRI MQTT specifications will need to be changed from the default. Initially we support
-cabs, power and blocks.  Blocks have combined occupancy sensor and reporter.
+**mqtt\*** - Other MQTT modules provide interfaces for MQTT devices and agents.
+These may be used with JMRI but JMRI MQTT specifications will need to be
+changed from the default. Initially we support cabs, power and blocks.
+Blocks have combined occupancy sensor and reporter.
 
 **wifi** - This acts as wrapper for the standard MicroPython network/Wi-Fi functions.
 
@@ -44,15 +97,15 @@ DCC Command Serialisation for use with RailCom detection.
 **dcc_rc_ch1** - This module contains the functions and classes for DCC RailCom
 block detection on Channel 1.
 
-**dcc_rc_ch2** - This module contains the functions and classes for DCC RailCom command station
- mobile responses on Channel 2.
+**dcc_rc_ch2** - This module contains the functions and classes for DCC RailCom
+command station mobile responses on Channel 2.
 
-**dcc_rc_pio**  - This module contains the functions and classes for low level RailCom datagram reading.
-It's applicable for block occupancy detection on Channel 1 and central dcc command decoder responses
-on Channel 2.
+**dcc_rc_pio**  - This module contains the functions and classes for low level
+RailCom datagram reading. It's applicable for block occupancy detection on
+Channel 1 and central dcc command decoder responses on Channel 2.
 
 **trk_mon** - This module monitors the booster and track status by looking at the DRV8874
-fault pin and current sense pin.
+enable, fault and current sense pins.
 
 ---
 
@@ -160,6 +213,8 @@ DCC Power On/Off
 
 Start and stop command packet transmission scheduling.
 
+Changing the power state will cause the new power state available flag to be set.
+
 Parameters
 
 - *p* 1 for power on, 0 for power off, None for get power status
@@ -253,6 +308,17 @@ Returns
 
 ---
 
+method **wait_for_flag** *()*
+
+Wait for the new state available flag.
+
+The new state available flag is an instance of the asyncio.ThreadSafeFlag class
+and when set, it indicates that the power state has changed. This method waits
+for the flag to be set.
+It must be called from a coroutine.
+
+---
+
 Available constants are:
 
 ```py
@@ -268,6 +334,51 @@ OFF = const(0)
 # Power On
 ON = const(1)
 ```
+
+---
+
+### Module dcc_rc_ch1
+
+---
+
+class **RComBlkDet** *(blk_name, rc_sm_num, rx_pin, enable_pin = None)*
+
+Parameters
+
+- *blk_name* the name of the block
+- *rc_sm_num*  the first state machine number.
+- *enable_pn* the pin as used by the DCC generator to assert the RailCom cutout (optional).
+
+---
+
+method **wait_for_flag** *()*
+
+Wait for the new block state available flag.
+
+The new state available flag is an instance of the asyncio.ThreadSafeFlag class
+and when set, it indicates that the block detection state state has changed.
+This method waits for the flag to be set.
+It must be called from a coroutine.
+
+---
+
+method **get_block_state** *()*
+
+Get the current block state
+
+This returns the current block state. The block state is a tuple of the block
+status and any RailCom information available. The block status may be:
+
+- *Device.UNKNOWN* the block state is unknown
+- *Device.EMPTY* the block is empty
+- *Device.BLK_OCC* the block is occupied, but no RailCom Channel 1 information is available
+- *Device.BLK_CH1* the block is occupied and RailCom Channel 1 information is available
+
+RailCom information, if available, is a tuple:
+
+- *address type* 's', 'l' or 'c' for short, long or consist
+- *address* as an integer number
+- *orientation* 1 or -1
 
 ---
 

@@ -32,8 +32,7 @@ immutable.
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-
-from micropython import const
+import asyncio
 
 from mqtt_client import MQTTClient
 
@@ -64,6 +63,7 @@ class MQTTAgent():
         """
         self._topic_filter = topic_filter
         self._QoS = QoS
+        self._create_pub_check() # create the publication check task
 
     def matches(self, topic):
         """check if topic matches filter
@@ -120,22 +120,19 @@ class MQTTAgent():
         """
         raise NotImplementedError
     
-    def pub_check(self):
-        """ Publication check
+    def _create_pub_check(self):
+        """ Create Publication check task
         
-        Check to see if agent has anything to publish and publish it.
+        Creates a task to periodically  check to see if agent has anything to publish and publish it.
         
         This is the default version for those agents that do not publish.
         It should be overridden in the derived class for any agent that publishes.
-
-        returns:
-            False if nothing published
         """
-        return False
+        return
 
 
 class Will(MQTTAgent):
-    """Manage Will Subscription
+    """Will Agent
 
     The subscription is used to handle the MQTT will message when published by the broker on behalf
     of another client that has gone off line (e.g. jmri). The subscription is remote client specific
@@ -159,18 +156,23 @@ class Will(MQTTAgent):
         This method is called by the MQTT client when a will publication is received.
         :TODO: What to do with this?
 
+        retained 1 payload 'OFFLINE' on initial connection indicates JMRI not available
+        retained 0 payload 'OFFLINE' during connection indicates JMRI connection now closed
+        retained 0 payload '' during connection indicates JMRI now available.
+
         Args:
             topic: the topic of the publication
             dup_flag: True if this is a duplicate publication
             ret_flag: True if this is a retained publication
             payload: the payload of the publication as a string
         """
-        pass
+        print('will', ret_flag, payload)
 
 class Block(MQTTAgent):
-    """Block Subscription 
+    """Block Agent
 
-    This subscription is used to handle publications to the block topic.
+    This agent is used to handle publications to the block topic and
+    any publications it makes.
     """
     SENSOR_TOPIC_PREFIX = "track/sensor"
     REPORTER_TOPIC_PREFIX = "track/reporter"
@@ -182,8 +184,13 @@ class Block(MQTTAgent):
     def __init__(self, rc_block):
         self._rc_block = rc_block # RailCom block
         self._name = rc_block.get_name()
-        self._last_block_state = None
+        #self._last_block_state = None
         super().__init__(f'{Block.SENSOR_TOPIC_PREFIX}/{self._name}/set', MQTTClient.QoS1)
+
+    def _create_pub_check(self):
+        """Overrides version in base class"""
+        asyncio.create_task(self._pub_check())
+        return
 
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
         """Handle a publication
@@ -196,36 +203,39 @@ class Block(MQTTAgent):
         """
         print("Sensor", topic, payload)
 
-    def pub_check(self):
-        """Publication check
+    async def _pub_check(self):
+        """ Publication check
         
-        Check to see if block state has changed and publish it.
+            Check to see if block state has changed and publish it.
         
-        returns:
-            True if the agent has published else False
+            This coroutine runs forever.
         """
-        # Get the current block state from the channel 1 detector
-        current_block_state = self._rc_block.get_block_state()
-        if current_block_state == self._last_block_state:
-            return False
-        # Publish the new block state
-        try:
-            tx_payload = Block.SENSOR_PAYLOAD[current_block_state[0]]
-        except KeyError:
-            # not valid status (yet)
-            return
-        if not self._client.publish(f'{Block.SENSOR_TOPIC_PREFIX}/{self._name}/event',
-                                 tx_payload, False, MQTTClient.QoS1):
-            return False # publish failed - retry later
-        self._last_block_state = current_block_state
-        if current_block_state[0] == RComBlkDet.BLK_CH1:
-            # channel 1 info available
-            self._client.publish(f'{Block.REPORTER_TOPIC_PREFIX}/{self._name}',
-                                 f'{current_block_state[1][1]} {current_block_state[1][2]}',
-                                 False, MQTTClient.QoS1)
-        else:
-            # clear reporter info
-            self._client.publish(f'{Block.REPORTER_TOPIC_PREFIX}/{self._name}',
-                        '', False, MQTTClient.QoS1)
+        while True:
+            await self._rc_block.wait_for_flag()
 
-        return True        
+            # Get the new block state from the channel 1 detector
+            state, data = self._rc_block.get_block_state()
+
+            # Publish the new block state
+            try:
+                tx_payload = Block.SENSOR_PAYLOAD[state]
+            except KeyError:
+                # not valid status (yet)
+                continue
+            if not await self._client.publish(f'{Block.SENSOR_TOPIC_PREFIX}/{self._name}/event',
+                                    tx_payload,
+                                    False,
+                                    MQTTClient.QoS1):
+                continue # publish failed - retry later
+            if state == RComBlkDet.BLK_CH1:
+                # channel 1 info available
+                _, address, orientation = data
+                await self._client.publish(f'{Block.REPORTER_TOPIC_PREFIX}/{self._name}',
+                                    f'{address} {orientation}',
+                                    False, MQTTClient.QoS1)
+            else:
+                # clear reporter info
+                await self._client.publish(f'{Block.REPORTER_TOPIC_PREFIX}/{self._name}',
+                            '',
+                            False,
+                            MQTTClient.QoS1)

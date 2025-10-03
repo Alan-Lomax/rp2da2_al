@@ -136,7 +136,7 @@ class DCCCmdTx:
         This initialises the DCC serialisation singleton.  An attempt to create a 2nd
         instance will cause a runtime error.  The PIO state machine is allocated and initialised.
         
-        Timers are initialised. Pins are parameters are provided as Pin objects - not numbers!
+        Timers are initialised. Pins parameters are provided as Pin objects - not numbers!
 
         If RailCom cutouts are required the cutout generator must use a PIO state machine in the same PIO
         block.
