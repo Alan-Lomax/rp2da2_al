@@ -11,7 +11,7 @@ It uses the machine module for hardware interaction and the device module for ev
 
 import _thread, time, sys
 
-
+from micropython import alloc_emergency_exception_buf
 
 from machine import Pin, ADC
 
@@ -25,6 +25,7 @@ from screen import Screen
 from led import NeoString
 if __name__ == '__main__':
 
+    alloc_emergency_exception_buf(100)
 
     ERR_CODE_DECODE = {
         RailComRead.ERR_WH:'W_HIGH',

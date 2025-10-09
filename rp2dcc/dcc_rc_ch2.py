@@ -116,8 +116,6 @@ class RComCmdRsp(Device):
                               rx_pn,  self._rail_com_ch2_msg, 2, enable_pn)
         
         self._rc_msg = {}   # most recently received message by address
-        self._speed = {}    # dynamic speed by address 
-        self._recep_stats = {}  # decoder reported reception stats by address
         self._dyn_info = {} # other dynamic info
         self._pom_acc = {}   # outstanding cv accesss requests by command type/address
 
@@ -168,7 +166,7 @@ class RComCmdRsp(Device):
         message. Other mobile decoders remain silent.
 
         args:
-            buffer:   translated data
+            buffer:   raw data
             _: orientation of DCC decoder wrt DCC signal - not used
         """
         cmd = CommandPacket.get_last_command()
@@ -220,9 +218,9 @@ class RComCmdRsp(Device):
         try:
             while True:
                 # StopIteration will end the loop
-                b = next(buff_iter)
+                b = RailComRead.hw4_2_6b(next(buff_iter))
                 if b > 0x3f:
-                    if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
+                    if b in RailComRead.PROT_BYTE:
                         # encoded protocol bytes
                         # these only get reported once so save in a set
                         # as ACK may be used as filler
@@ -245,8 +243,8 @@ class RComCmdRsp(Device):
                     try:
                         error = False
                         for _ in range(_DG2_LEN[dg_id]):
-                            b = next(buff_iter)
-                            if b > 63:
+                            b = RailComRead.hw4_2_6b(next(buff_iter))
+                            if b > 0x3f:
                                 if b in RComCmdRsp.ERR_CODE:
                                     # Recognised Error code
                                     # no point in going any further - as structure of

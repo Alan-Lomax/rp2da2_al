@@ -83,11 +83,15 @@ _MAX_MUX = const(128 * 128 * 128)
 class MQTTPacketOut():
     """MQTT Control Packet Out
 
-    This class is used to construct MQTT control packets to be sent to the broker.
+    This class is used to construct MQTT control packets to be sent to the
+    broker.
     It provides methods to add bytes, strings and payloads to the packet.
-    The packet is constructed as a bytearray and the buffer method returns the complete packet.
-    The first byte is the control packet type and flags, the second byte is the length of the packet.
-    The length is calculated as the number of bytes in the packet minus 2 (the first two bytes).
+    The packet is constructed as a bytearray and the write method sends the
+    complete packet.
+    The first byte is the control packet type and flags, the second byte
+    is the length of the packet.
+    The length is calculated as the number of bytes in the packet minus 2
+    (the first two bytes).
     The packet is constructed in the order of the MQTT protocol specification.
     """
 
@@ -178,7 +182,7 @@ class MQTTClient(Device):
     The client will connect to the MQTT broker and subscribe to the topics defined in the subscription list.
     The client will then listen for incoming messages and handle them according to the subscription list.
 
-    Writes are blocking and therefore cannot be executed in Timer isr callbacks.
+    asyncio.Streams are used for reading and writing.
 
     Attributes:
         QoS_MASK:  mask for QoS bits
@@ -341,9 +345,6 @@ class MQTTClient(Device):
                     # remote close seems to trigger 0 len message
                     # and 1 is too short
                     await self._close()
-
-
-
 
     async def publish(self, topic, payload,  retain = True, QoS = QoS1):
         """ MQTT Publish

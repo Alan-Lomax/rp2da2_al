@@ -350,6 +350,7 @@ class DCCCommand():
         """
         if self._dcc_gen_pio.pio_pwr() == DCCCmdTx.OFF:
             # power now off - don't transmit.
+            self._dcc_gen_pio.pio_off() # deactivate pio sm now cycle complete
             return
         if len(self._packet_list) == 0:
             # list empty send the DCC idle packet

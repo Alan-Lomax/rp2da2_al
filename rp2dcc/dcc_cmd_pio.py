@@ -136,7 +136,7 @@ class DCCCmdTx:
         This initialises the DCC serialisation singleton.  An attempt to create a 2nd
         instance will cause a runtime error.  The PIO state machine is allocated and initialised.
         
-        Timers are initialised. Pins parameters are provided as Pin objects - not numbers!
+        Pins parameters are provided as Pin objects - not numbers!
 
         If RailCom cutouts are required the cutout generator must use a PIO state machine in the same PIO
         block.
@@ -297,9 +297,9 @@ class DCCCmdTx:
             - de-assert the booster sleep pin (1 for False)
             - start the DCC generator state machine
 
-        On power off we
-            - assert the booster sleep pin (0 for True)
-            - stop the state machine
+        On power off we assert the booster sleep pin (0 for True)
+
+        The state machine will be stopped when the current command cycle is complete.
 
         args:
             p: 1 for power on, 0 for power off, None for get power status
@@ -314,6 +314,12 @@ class DCCCmdTx:
             self._sm.active(True)
         else:
             self._sleep_pin(0)
-            self._sm.active(False)
         return self._sleep_pin()
+    
+    def pio_off(self):
+        """Stop PIO State Machine
+        
+        """
+        self._sm.active(False)
+
 

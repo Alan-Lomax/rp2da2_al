@@ -38,7 +38,7 @@ from micropython import const, schedule
 import array
 import rp2
 
-
+import time
 
 # module constants - not for importing elsewhere
 _PIO_CU_FREQ = const(250_000)           # 250 kHz - 4 micro sec. tick period for command stn. cutout timing
@@ -129,7 +129,8 @@ class RailComRead:
     ERR_ID = const(0x8A)
     ERR_FE = const(0x8B)
 
-
+    PROT_BYTE = (ACK, BUSY, NAK, RES)
+    
     # datagram IDs (incomplete at present) - ID's are 6 bits 
     # IDs >= 64 are internally generated datagrams
     DG_RESP = const(0x40) # protocol control byte
@@ -169,6 +170,35 @@ class RailComRead:
                     6:PIO1_BASE + SM3_EXECCTRL}
     """Memory locations for restart calculation by MP state machine number
     """
+
+    @staticmethod
+    def hw4_2_6b(rawd):
+        """Translate Hamming weight 4 byte to 6 bit
+
+        This translates the raw data byte as deserialised back to the
+        6 bit datagram component value or protocol control character.
+        Two errors are possible. The raw value signifies an overrun err
+        or the Hamming weight is not 4.
+        
+        params:
+            rawd: Hamming Weight 4 input
+
+        returns:
+            the translated value or error code.
+        """
+        try:
+            # is the byte value in the Hamming 4 weight look up table?
+            return(RailComRead._H4LU[rawd & 0xff])
+        except KeyError:
+            # no it's not! overrun or Hamming W != 4
+            if (rawd & 0x200) != 0:
+                return(RailComRead.ERR_OE)
+        
+            # work out if Hamming weight is high or low
+            if bin(rawd & 0xff).count('1') > 4:
+                return(RailComRead.ERR_WH)
+                    
+            return(RailComRead.ERR_WL)    
 
     def __init__(self, cu_sm_num, rc_rx_pin, cb, channel = 1, cu_pin = None):
         """ RailCom class constructor
@@ -230,7 +260,6 @@ class RailComRead:
         Unconditional 'jmp' opcode is 0 so the address is the jump instruction!
 
         Raises KeyError if state machine number invalid. 
-        
         """
         self._rx_buff = bytearray(6) # translated buffer - max is 6 bytes for channel 2
         self._rx_raw = array.array('I', range(8)) # raw buffer for PIO - 8 words to match FIFO
@@ -461,27 +490,7 @@ class RailComRead:
             # quietly truncate the buffer if over channel len
             raw_buff = raw_buff[:self._max_buf]
 
-        x = 0
-        for rxd in raw_buff:
-            try:
-                # is the byte value in the Hamming 4 weight look up table?
-                self._rx_buff[x] =  RailComRead._H4LU[rxd & 0xff]
-                x += 1
-            except KeyError:
-                # no it's not! overrun?
-                if (rxd & 0x200) != 0:
-                    self._rx_buff[x] = RailComRead.ERR_OE
-                else:
-                    # work out if Hamming weight is high or low
-                    self._rx_buff[x] = (RailComRead.ERR_WH
-                        if bin(rxd & 0xff).count('1') > 4
-                        else RailComRead.ERR_WL)
-                x += 1
-                if x == 1: # first byte is in error - no point in going further
-                    # remainder of message not parsable
-                    break
-        # buffer now translated - parsing for channel specific info done in callback
-        self._callback(memoryview(self._rx_buff)[:x], detector_side)
+        self._callback(raw_buff, detector_side)
         m = disable_irq()
         self._ql = False # allow next read to be decoded
         enable_irq(m)

@@ -144,31 +144,20 @@ class RComBlkDet(Device):
         """
         return self._cb_count
     
-    def get_dg_list(self):
-        """ Get Datagram list
-        
-        Diagnostic method to retrieve the list of datagram types that have been
-        decoded.
-        
-        returns:
-            the set of datagram ids
-        """
-        return self._dgs
-    
     def reset_stats(self):
         """ Reset diagnostic informations
         
         Clears the error counts and set of datagram ids.
         """
         self._errors = {}
-        self._dgs = set()
         self._cb_count = 0  # number of times called back
 
     def get_block_state(self):
         """ Get the current block state
         
-        This returns the current block state. The block state is a tuple of the block status and any RailCom
-        information available. The block status may be:
+        This returns the current block state. The block state is a tuple of
+        the block status and any RailCom information available.
+        The block status may be:
         - Device.UNKNOWN: the block state is unknown
         - Device.EMPTY: the block is empty
         - Device.BLK_OCC: the block is occupied, but no RailCom Channel 1 information is available
@@ -234,7 +223,8 @@ class RComBlkDet(Device):
         self._cb_count += 1 
 
         try:
-            if buffer[0] == RailComRead.ERR_OE:
+            rx1 = RailComRead.hw4_2_6b(buffer[0])
+            if rx1 == RailComRead.ERR_OE:
             # first character has overrun - most likely switching noise after end of window
             # or false trigger - not logged or parsed
                 return
@@ -242,17 +232,20 @@ class RComBlkDet(Device):
             return # nothing there - not logged
 
         # other errors indicate datagram corruption - possibly due to >1 decoder in block
-        if len(buffer) != 2:
+        try:
+            rx2 = RailComRead.hw4_2_6b(buffer[1])
+        except IndexError:
             # too short (too long shouldn't be possible)
             self._log_error(RailComRead.ERR_FE) # log as datagram format error
             self._id_val = {} # clear any previous datagrams
             return
+
         
-        for b in buffer:
+        for b in rx1, rx2:
             if b > 0x3f:
                 # it's some kind of error
                 self._id_val = {} # clear any previous datagrams
-                if b in (RailComRead.ACK, RailComRead.BUSY, RailComRead.NAK, RailComRead.RES):
+                if b in RailComRead.PROT_BYTE:
                     # control character - not allowed in channel 1
                     self._log_error(RailComRead.ERR_CB)
                 else:
@@ -261,7 +254,7 @@ class RComBlkDet(Device):
                 return # stop parsing
         
         # save the payload value against the id
-        dg_id = buffer[0] >> 2
+        dg_id = rx1 >> 2
         if not (0 < dg_id <= 3):
             # invalid datagram id 
             self._log_error(RailComRead.ERR_ID)
@@ -269,10 +262,7 @@ class RComBlkDet(Device):
         # both values need to be present to get this far
         # there's a valid response so reset the 'no response' count
         self._no_resp_count =  _MAX_NO_READ
-        self._id_val[dg_id] =  ((buffer[0] & 0x03) << 6) | buffer[1]
-
-        # track datagrams by type
-        self._dgs.add(dg_id)
+        self._id_val[dg_id] =  ((rx1 & 0x03) << 6) | rx2
   
         # try and build decoder address
         try:

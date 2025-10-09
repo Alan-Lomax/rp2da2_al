@@ -44,7 +44,7 @@ from screen import Screen
 from dcc_rc_ch1 import RComBlkDet
 
 # MQTT imports
-from mqtt import Will, Block, RComBlkDet
+from mqtt import Will, Block
 from mqtt_client import MQTTClient
 
 from wifi import WiFi
@@ -83,7 +83,9 @@ async def main():
     RC1A_STATE_MC = const(0) #RailCom Block A (channel 1) detector state machine number
 
     RC1B_STATE_MC = const(2) #RailCom Block B (channel 1) detector state machine number
-    
+    RC1C_STATE_MC = const(4)
+    RC1D_STATE_MC = const(6)
+
     build = sys.implementation._build # get build details
     if build.find("PICO") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
@@ -99,12 +101,22 @@ async def main():
         _ = Pin(1, Pin.IN)
         c1b_rx_pin = Pin(15, Pin.IN)
         _ = Pin(16, Pin.IN)
+
+        # second Dual reader - these pins are used for DRV8874
+        # on command station
+
+        c1c_rx_pin = Pin(18, Pin.IN)
+        _ = Pin(19, Pin.IN)
+        c1d_rx_pin = Pin(20, Pin.IN)
+        _ = Pin(21, Pin.IN)
     else:
         print (build, "invalid")
 
     # List of MQTT agents to be started.
     MQTT_LIST = [Block(RComBlkDet('1011', RC1A_STATE_MC, c1a_rx_pin)),
                 Block(RComBlkDet('1012', RC1B_STATE_MC, c1b_rx_pin)),
+                Block(RComBlkDet('1013', RC1C_STATE_MC, c1c_rx_pin)),
+                Block(RComBlkDet('1014', RC1D_STATE_MC, c1d_rx_pin)),        
                 Will("track/state", MQTTClient.QoS1)]
 
     await MQTTClient.get_instance().run(MQTT_LIST)  # runs forever

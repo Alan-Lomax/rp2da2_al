@@ -5,7 +5,9 @@ This script is designed to run on a Raspberry Pi Pico or Arduino Nano Connect ac
 It initializes the necessary pins and starts the RailCom channel 1 detectors.
 It also includes a thread to display event reports and prints statistics about detection.
 
-It uses the machine module for hardware interaction and the device module for event reporting."""
+It uses the machine module for hardware interaction and the device module for event reporting.
+
+"""
 
 
 
@@ -36,13 +38,6 @@ if __name__ == '__main__':
                 }
 
 
-    # DRV8874 pin allocations - common to Pico & Arduino Nano Connect
-    enable_pin = Pin(18, Pin.OUT, value = 1)
-    sleep_pin = Pin(19, Pin.OUT, value = 0)   # set sleep mode initially
-    dcc_pin = Pin(20, Pin.OUT)
-    fault_pin = Pin(21, Pin.IN, Pin.PULL_UP)  # low for true - open drain OP on DRV8874
-    sense_pin = ADC(Pin(26)) # current sense input
-
     build = sys.implementation._build # get build details
     if build.find("PICO") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
@@ -58,14 +53,24 @@ if __name__ == '__main__':
         _ = Pin(1, Pin.IN)
         c1b_rx_pin = Pin(15, Pin.IN)
         _ = Pin(16, Pin.IN)
+
+        # second Dual reader - these pins are used for DRV8874
+        # on command station
+
+        c1c_rx_pin = Pin(18, Pin.IN)
+        _ = Pin(19, Pin.IN)
+        c1d_rx_pin = Pin(20, Pin.IN)
+        _ = Pin(21, Pin.IN)
     else:
         print (build, "invalid")
 
 
     time_stamp = time.ticks_ms()
 
-    rc_ch1a = RComBlkDet('t001', 4, c1a_rx_pin)
-    rc_ch1b = RComBlkDet('t002', 6, c1b_rx_pin)
+    block_list = (RComBlkDet('t001', 4, c1a_rx_pin),
+                RComBlkDet('t002', 6, c1b_rx_pin),
+                RComBlkDet('t003', 0, c1c_rx_pin),
+                RComBlkDet('t004', 2, c1d_rx_pin))
     
     def main1():
         # bypass screen module to avoid pulling in MQTT & WiFi
@@ -83,12 +88,11 @@ if __name__ == '__main__':
     def print_stats(reset = True):
         global time_stamp
         elapsed_time = time.ticks_diff(time.ticks_ms(), time_stamp)  
-        for block in (rc_ch1a, rc_ch1b ):
+        for block in (block_list):
             counts = block.get_error_counts()
             cb_count = block.get_cb_count()
             print(f'** Channel 1 block {block.get_name()} **')
             print(f"Call back rate: {(cb_count) * 1000 / elapsed_time:.2f} per sec")
-            print("datagrams:",block.get_dg_list())
             for key, value in counts.items():
                 print(f'{ERR_CODE_DECODE[key]}\t{value}')
             
