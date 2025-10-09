@@ -1,4 +1,0 @@
-(fp_lib_table
-  (version 7)
-  (lib (name "Library.SSD1306")(type "KiCad")(uri "${KIPRJMOD}/Documents/Library.SSD1306")(options "")(descr ""))
-)

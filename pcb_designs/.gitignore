@@ -1,6 +1,0 @@
-# Kicad specific exclusions
-*[Bb]ackups/
-**/[Gg]erbers/*.zip
-**/*.kicad_prl
-fp-info-cache
-**/*.lck
