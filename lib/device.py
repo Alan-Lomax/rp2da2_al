@@ -101,6 +101,7 @@ class Device():
     BLK_EMPTY = const(20)   # Block unoccupied
     BLK_CH1   = const(21)   # Block occupied - RailCom channel 1 info
     BLK_OCC   = const(22)   # Block occupied - Load detected but no info
+    BLK_NPOW  = const(23)   # Block no power
 
     # RailCom channel 2, global detector
 

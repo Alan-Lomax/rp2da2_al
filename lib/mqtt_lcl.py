@@ -111,7 +111,8 @@ class Sensor(MQTTAgent):
    
 
     SENSOR_PAYLOAD = {DCCBlkDet.BLK_EMPTY:"INACTIVE",
-                       DCCBlkDet.BLK_OCC:"ACTIVE"}
+                       DCCBlkDet.BLK_OCC:"ACTIVE",
+                       DCCBlkDet.BLK_NPOW:"INACTIVE"}
     
 
     def __init__(self, sensor):

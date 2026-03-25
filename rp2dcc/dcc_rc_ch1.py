@@ -17,11 +17,12 @@ This module contains the functions and classes for DCC RailCom block detection o
 """
 import asyncio
 
-from machine import  Timer
 from micropython import const
+from machine import Pin
 
 from dcc_rc_pio import RailComRead
 from device import Device
+
 
 _MAX_NO_READ = const(10)    # maximum number of missed reads/no load
 #_TIMER_PERIOD = const(50)   # time in ms between checks for current load on block 
@@ -62,7 +63,7 @@ class RComBlkDet(RailComRead):
     
 
    
-    def __init__(self, blk_name, rc_sm_num, rx_pin):
+    def __init__(self, blk_name, rc_sm_num, rx_pin, led):
         """Construct the RailCom block detector
         
         This constructs the RailCom block detector. This reads channel 1. It instatiates a RailCom reader using
@@ -82,7 +83,9 @@ class RComBlkDet(RailComRead):
         """
 
         self._id_val = {} # channel 1 payload values for ids 1 & 2
-        self._rx_pin = rx_pin
+        self._rx_pin = Pin(rx_pin, Pin.IN)
+        _ = Pin(rx_pin + 1, Pin.IN) # initialise orientation pin too
+        self._led = led
         self._no_resp_count = _MAX_NO_READ
         self.reset_stats()
 
@@ -94,14 +97,15 @@ class RComBlkDet(RailComRead):
 
         super().__init__(blk_name,
                         rc_sm_num,
-                        rx_pin)
+                        self._rx_pin)
         
         asyncio.create_task(self._check_resp())
 
     async def wait_for_flag(self):
         """ Wait for the new state available flag
 
-        This waits for the asynchio thread safe flag to be set.
+        This waits for the asynchio thread safe flag to be set. This may be used by another thread
+        to wait on a state change.
         """
         await self._ready_flag.wait()
         return
@@ -116,6 +120,7 @@ class RComBlkDet(RailComRead):
             event:  updated Block status code.
             data:   a tuple containing address type, address & orientation  
         """
+        self._led.update(event, data)
         self._ready_flag.set()
         super().report_event(event, data)
 
@@ -277,6 +282,7 @@ class RComBlkDet(RailComRead):
                 # nothing happened.
                 if self._blk_state is not None:
                     self._blk_state = None
+                    self._led.update(Device.BLK_CH1, None)
                     self.report_event(Device.BLK_CH1, None)
                 continue
             # event flag set - restart timeout

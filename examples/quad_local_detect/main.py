@@ -4,12 +4,12 @@
 
 This is the main entry point for the RP2 application running a layout distributed pico. 
 It starts the MQTT client and the RailCom block detector objects on the first core.
-It also starts the screen and NeoString objects on the second core.
+It also starts the screen on the second core.
 
 All interrupt service routines and timer callbacks run on core 0.  No pre-emptive code
 runs on core 1.
 
-It is designed to run on the Raspberry Pi Pico2 W or Arduino Nano RP2040 Connect.
+It is designed to run on the Raspberry Pi Pico2 W.
 The Wi-Fi radio interface uses a PIO state machine. The Pico W doesn't have enough state
 machines for concurrent Wi-Fi and quad RailCom.
 It uses the micropython,  _thread, sys, network and asyncio libraries.
@@ -35,12 +35,12 @@ It also uses the dcc_rc_ch1, neoled, screen, mqtt_cmd, mqtt, mqtt_client, and de
 import _thread, sys, network, asyncio
 
 # micropython imports 
-from micropython import const,alloc_emergency_exception_buf
-from machine import Pin, ADC
+from micropython import alloc_emergency_exception_buf
 
 # lib imports
 from device import Device
 from screen import Screen
+from led_pio import BlkLed
 
 # DCC and RailCom imports
 from dcc_rc_ch1 import RComBlkDet
@@ -48,7 +48,8 @@ from dcc_rc_pio import RailComRead
 from blk_mon import DCCBlkDet
 
 # MQTT imports
-from mqtt import Will, Block, Sensor
+from mqtt import Will
+from mqtt_lcl import Block, Sensor
 from mqtt_client import MQTTClient
 
 from wifi import WiFi
@@ -74,6 +75,40 @@ def screen_splash():
             t1 = (1, 'RailCom Block', 0)
     return (t0, t1, t2, t3)
 
+
+def build_config(blocks):
+    """
+    Build the configuration.
+
+    Many objects that are part of the configuration are instantiated here. A
+    list of mqtt agents that reference these objects is returned.
+
+    Objects are instantiated in order. I.e. the first object gets the first set of
+    hardware resournces such as GPIO pins and so on.
+
+    For track blocks both RailCom detectors and current based occupancy detectors are instantiated.
+    
+    args:
+        blocks: List of block names in order
+
+    returns:
+        list of mqtt agents to be started
+    """
+    build = sys.implementation._build # get MicroPython build details
+    if build.find("PICO") == -1:
+        raise RuntimeError("Unsupported Platform")
+    rx_pin = [14, 16, 18, 20]  # pin numbers for RailCom RX (orientation is pin + 1)
+    state_machine = [0, 2, 4, 6]  # state machine numbers for RailCom channel timers
+    m_lst = []
+    i = 0
+    for blk_name in blocks:
+        led = BlkLed(i + 1) # first led reserved for comms status
+        m_lst.append(Block(RComBlkDet(blk_name, state_machine[i], rx_pin[i], led)))
+        m_lst.append(Sensor(DCCBlkDet(blk_name, i, led)))
+        i = i + 1
+    m_lst.append(Will("track/state", MQTTClient.QOS1))
+    return m_lst
+
 async def main():
     """Main function for the RP2 first core (core 0) application.
 
@@ -82,53 +117,18 @@ async def main():
     MQTT agents are set for the channel 1 block detectors
     The main loop polls the MQTT client
     """
-    RC1A_STATE_MC = const(0) #RailCom Block A (channel 1) detector state machine number
+    # this runs forever
+    await MQTTClient.get_instance().run(build_config(('1011', '1012', '1013', '1014')))
 
-    RC1B_STATE_MC = const(2) #RailCom Block B (channel 1) detector state machine number
-    RC1C_STATE_MC = const(4)
-    RC1D_STATE_MC = const(6)
-
-    build = sys.implementation._build # get build details
-
-    if build.find("NANO") > -1:
-        # The Nano is required for a quad configuration
-        # RP Picos only have three ADC channels available.
-        # Detector pin allocations - Arduino Nano  format
-        # orientation pins are initiated but not specifically allocated
-        c1a_rx_pin = Pin(0, Pin.IN)
-        _ = Pin(1, Pin.IN)
-        c1b_rx_pin = Pin(15, Pin.IN)
-        _ = Pin(16, Pin.IN)
-    else:
-        print (build, "invalid")
-
-    # second Dual reader - these pins are used for DRV8874
-    # on command station
-
-    c1c_rx_pin = Pin(18, Pin.IN)
-    _ = Pin(19, Pin.IN)
-    c1d_rx_pin = Pin(20, Pin.IN)
-    _ = Pin(21, Pin.IN)
-
-    # List of MQTT agents to be started.
-    MQTT_LIST = [Block(RComBlkDet('1011', RC1A_STATE_MC, c1a_rx_pin)),
-                Block(RComBlkDet('1012', RC1B_STATE_MC, c1b_rx_pin)),
-                Block(RComBlkDet('1013', RC1C_STATE_MC, c1c_rx_pin)),
-                Block(RComBlkDet('1014', RC1D_STATE_MC, c1d_rx_pin)),
-                Sensor(DCCBlkDet('1011',ADC(26))),
-                Will("track/state", MQTTClient.QOS1)]
-
-    await MQTTClient.get_instance().run(MQTT_LIST)  # runs forever
 
 def main1():
     """ Main function for the RP2 second core (core 1) application.
     
-    This function sets up the screen and NeoString objects.
+    This function sets up the screen.
     It also enters a loop to read event reports and update the screen and
     NeoString accordingly.
     """
     s = Screen().get_instance()
-    #np = NeoString(Pin(22),2)
     s.show_screen(screen_splash())
 
     while True:

@@ -11,51 +11,29 @@ based and run MicroPython V1.26 or later. Testing has principly taken place on
 Pico, Pico W and Arduino Nano RP2040 Connect platforms. Elements of the application
 may run on other MicroPython capabable platforms with no, or minor modifications.
 DCC and RailCom components use the RP2 Programmable IO peripheral so must be run
-on an RP2 based MCU. RP2350 based MCUs such as the Pico 2 W should be acceptable
-but this is as yet untested.
+on an RP2 based MCU. RP2350 based MCUs such as the Pico 2 W are acceptable too.
+
+Primary components are a command station with integrated booster/RailCom cutout and
+global RailCom detector.
 
 A booster is required to convert the DCC signal into a form suitable for
 suppling power directly to track. The reference booster is the Texas
-Instruments DRV8874 mounted on a Pololu header. This may deliver up to 2.9 A
+Instruments DRV8874 mounted on a Pololu header. This also acts as the RailCom cutout. This may deliver up to 2.9 A
 instantaniously but is only rated for 2.1 A continuous load. You will also
 need a suitable DC power supply.
 
 RailCom detectors have been specifically designed for this project with circuit
-schematics and PCB designs for both global and local detectors. The PCB designs
+schematics and PCB designs for both command station and local detectors. The PCB designs
 and applications have been designed around a standard set of GPIO pin
-allocations.
+allocations. The local RailCom detector also provides a block occupancy indication using
+conventional current flow detection. This triggers at a nominal 1 mA enabling detection of 10kΩ wheel set resistors.
+SPI1 and other GPIO pins not currently used by the application suite
+may be exposed PCB on headers.
 
 ### GPIO Pins, I2C & SPI
 
-The following table shows pin allocations for a local detector on a Pico series
-platform. Pin allocations on other platforms may differ. Other platforms may be able to
-support additional local detectors.
-
-I2C0 and SPI1 pin assignments follow the MicroPython default pin assignments for
-these peripherals.
-
-|GPIO Pin|Pico / Pico W|
-|---|---|
-|4|OLED I2C0:sda|
-|5|OLED I2C0:scl|
-|6|SPI1 CS(secondary)|
-|8|SPI1 MISO|
-|9|SPI1 CS(primary)|
-|10|SPI1 SCK|
-|11|SPI1 MOSI|
-|14|RailCom ch 1 (a) rx|
-|15|RailCom ch 1 (a) orientation|
-|16|RailCom ch 1 (b) rx|
-|17|RailCom ch 1 (b) orientation|
-|18|RailCom ch 1 (c) rx|
-|19|RailCom ch 1 (c) orientation|
-|22|NeoPixel chain (4 LEDs)|
-|26|Current Detector (a)|
-|27|Current Detector (b)|
-|28|Current Detector (c)|
-
-When configured as a command station one channel 2 global detector is
-available. Pin allocations for a Pico based command station are as follows.
+On the command station one global detector is
+available for the receipt of Channel 2 datagrams. Pin allocations for a Pico based command station are as follows.
 Pin allocations on other platforms may differ.
 
 |GPIO Pin (Pico & Nano)|Function|
@@ -73,6 +51,34 @@ Pin allocations on other platforms may differ.
 |Ground|DRV8874 pMode|
 |NC|DRV8874 Vref|
 |22|NeoPixel chain (2 LEDs)|
+
+The following table shows pin allocations for a four local detector on a Pico series
+platform. Pin allocations on other platforms may differ. Other platforms may be able to
+support additional local detectors.
+
+I2C0, I2C1 and SPI1 pin assignments follow the MicroPython default pin assignments for
+these peripherals.
+
+|GPIO Pin|Pico / Pico W|
+|---|---|
+|4|OLED I2C0:sda|
+|5|OLED I2C0:scl|
+|6|I2C1:sda|
+|7|I2C1:scl|
+|6|SPI1 CS(secondary)|
+|8|SPI1 MISO|
+|9|SPI1 CS(primary)|
+|10|SPI1 SCK|
+|11|SPI1 MOSI|
+|14|RailCom ch 1 (a) rx|
+|15|RailCom ch 1 (a) orientation|
+|16|RailCom ch 1 (b) rx|
+|17|RailCom ch 1 (b) orientation|
+|18|RailCom ch 1 (c) rx|
+|19|RailCom ch 1 (c) orientation|
+|20|RailCom ch 1 (d) rx|
+|21|RailCom ch 1 (d) orientation|
+|22|NeoPixel chain (5 LEDs)|
 
 ### Programmable Input/Output & State Machines
 
@@ -94,7 +100,7 @@ allocating them.
 
 |State Machine|Function|
 |---|---|
-|0|DCC generation.|
+|0|DCC generation|
 |1 - 3|Not available. DCC generation uses virtually all PIO 0 memory|
 |4|Radio on Pico W|
 |5|NeoPixel on Pico|
@@ -111,8 +117,10 @@ allocating them.
 |1|Block A RailCom RX|
 |2|Block B RailCom Channel 1 timing|
 |3|Block B RailCom RX|
-|6|Block C RailCom Channel 1 timing|
-|7|Block C RailCom RX|
+|4|Block C RailCom Channel 1 timing|
+|5|Block C RailCom RX|
+|6|Block D RailCom Channel 1 timing|
+|7|Block D RailCom RX|
 |8|Radio on Pico2 W|
 |9|NeoPixel on Pico2|
 
@@ -222,7 +230,7 @@ The screen driver will object if it can’t find the OLED on the i2c bus.
 Most 0.91" OLEDs include i2c pull-ups so these should not be needed.
 
 Copy the files from the conf directory to a directory on the Pico named conf.  Edit the configuration files
-as required.
+as **after copying**.
 
 ### Command Station
 

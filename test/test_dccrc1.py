@@ -20,6 +20,7 @@ from machine import Pin, ADC
 from device import Device
 from dcc_rc_ch1 import RComBlkDet
 from dcc_rc_pio import RailComRead
+from led_pio import BlkLed
 from screen import Screen
 
 
@@ -42,47 +43,34 @@ if __name__ == '__main__':
     
     if build.find("PICO2") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
-        # orientation pins are initiated but not specifically allocated
-        c1a_rx_pin = Pin(14, Pin.IN)
-        _ = Pin(15, Pin.IN)
-        c1b_rx_pin = Pin(16, Pin.IN)
-        _ = Pin(17, Pin.IN)
-        c1c_rx_pin = Pin(18, Pin.IN)
-        _ = Pin(19, Pin.IN)
-        c1d_rx_pin = Pin(20, Pin.IN)
-        _ = Pin(21, Pin.IN)
+        c1a_rx_pin = 14
+        c1b_rx_pin = 16
+        c1c_rx_pin = 18
+        c1d_rx_pin = 20
     elif build.find("PICO") > -1:
         # Detector pin allocations - Raspberry Pi Pico format
-        # orientation pins are initiated but not specifically allocated
-        c1a_rx_pin = Pin(14, Pin.IN)
-        _ = Pin(15, Pin.IN)
-        c1b_rx_pin = Pin(16, Pin.IN)
-        _ = Pin(17, Pin.IN)
+        c1a_rx_pin = 14
+        c1b_rx_pin = 16
     elif build.find("NANO") > -1:
         # Detector pin allocations - Arduino Nano  format
-        # orientation pins are initiated but not specifically allocated
-        c1a_rx_pin = Pin(0, Pin.IN)
-        _ = Pin(1, Pin.IN)
-        c1b_rx_pin = Pin(15, Pin.IN)
-        _ = Pin(16, Pin.IN)
+        c1a_rx_pin = 0
+        c1b_rx_pin = 15
 
         # second Dual reader - these pins are used for DRV8874
         # on command station
 
-        c1c_rx_pin = Pin(18, Pin.IN)
-        _ = Pin(19, Pin.IN)
-        c1d_rx_pin = Pin(20, Pin.IN)
-        _ = Pin(21, Pin.IN)
+        c1c_rx_pin = 18
+        c1d_rx_pin = 20
     else:
         print (build, "invalid")
 
 
     time_stamp = time.ticks_ms()
 
-    block_list = (RComBlkDet('t001', 0, c1a_rx_pin),
-                RComBlkDet('t002', 2, c1b_rx_pin),
-                RComBlkDet('t003', 6, c1c_rx_pin))
-                #RComBlkDet('t004', 6, c1d_rx_pin))
+    block_list = (RComBlkDet('t001', 0, c1a_rx_pin, BlkLed(1)),
+                RComBlkDet('t002', 2, c1b_rx_pin, BlkLed(2)),
+                RComBlkDet('t003', 4, c1c_rx_pin, BlkLed(3)),
+                RComBlkDet('t004', 6, c1d_rx_pin, BlkLed(4)))
     
     def main1():
         # bypass screen module to avoid pulling in MQTT & WiFi

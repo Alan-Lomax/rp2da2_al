@@ -431,8 +431,6 @@ class MQTTClient(Device):
 
     async def _handle_suback(self, pf, packet):
         # flags must be 0
-        # conack flags must be 0 for clean session
-        # conack result must be 0
         if pf != 0:
             self._log_error(MQTTClient.ERR_SUBACK)
             await self._close()

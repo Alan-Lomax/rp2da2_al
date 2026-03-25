@@ -2,9 +2,11 @@
     :author: Paul Redhead
 
 This module contains the functions and classes for DCC block detection
-based on current load monitoring.
+based on current load monitoring. This is for the resistor based detector where the
+ADC is on the track side of the galvanic isolation and uses a TI ADC1015 ADC rather than the
+Pico's own ADC.
 """
-"""        Copyright (C) 2023, 2024, 2025 Paul Redhead
+"""        Copyright (C) 2023, 2024, 2025, 2026 Paul Redhead
 
         This program is free software: you can redistribute it and/or modify it
         under the terms of the GNU General Public License as published by the Free Software Foundation, 
@@ -17,8 +19,9 @@ based on current load monitoring.
 """
 import asyncio
 
-from machine import  ADC
 from micropython import const
+
+from machine import I2C
 
 from device import Device
 
@@ -41,8 +44,16 @@ _FILTER_RATIO =  const((_FILTER_FACTOR - 1) / _FILTER_FACTOR)
 _Z_FILTER_FACTOR = const(100)   # IIR filter factor (zero offset)
 _Z_FILTER_RATIO =  const((_Z_FILTER_FACTOR - 1) / _Z_FILTER_FACTOR)
 
-_U_THRESHOLD = const(4369) # Upper threshold 1 mA (65535 * 2.2 * 100 / 3300)
-_L_THRESHOLD = const(3277) # Lower threshold 0.75 mA
+_U_THRESHOLD = const(150) # 
+_L_THRESHOLD = const(75) #
+
+# ADC1015 parameters to start read.
+# 
+_ADC_CONF0 = b'\x95\xE3' # Single read, mux 1, FSR 2048 mV, 3300 sps, comparator off
+_ADC_CONF1 = b'\xA5\xE3' # as above but mux 2
+_ADC_CONF_ADD = const(1)
+_adc_addr = {0: (72, _ADC_CONF0), 1:(72, _ADC_CONF1), 2: (73, _ADC_CONF0), 3:(73, _ADC_CONF1)}
+_i2c = I2C(1)
 
 
 class DCCBlkDet(Device):
@@ -83,7 +94,10 @@ class DCCBlkDet(Device):
 
     DEVICE_TYPE = const('d')
 
-    def __init__(self, blk_name, adc):
+
+    _i2c_lock = asyncio.Lock() # to ensure only one read at a time
+
+    def __init__(self, blk_name, adc, led):
         """Construct the block current detector
         
         This constructs the block current detector.
@@ -93,15 +107,16 @@ class DCCBlkDet(Device):
 
         args:
             blk_name: the name of the block
-            adc: the analog to digital converter input
+            adc: logical number of the adc
         """
 
         self._id_val = {} # channel 1 payload values for ids 1 & 2
-        self._adc = adc
+        self._adc = adc #
+        self._led = led
         # set up readings buffer for LULU filter
         self._readings = [0 for _ in range(_LULU_SIZE - 1)]
-        self._base = 65535 / 2 # initialise base offset with start value
         self._av = 0.0 # initialise average IIR filtered reading with start value
+        self._offset = 0.0 
 
         """block state may be unknown, empty, occupied"""
         self._blk_state = Device.UNKNOWN # start of day value
@@ -131,6 +146,7 @@ class DCCBlkDet(Device):
             event:  updated Block status code.
             data:   a tuple containing address type, address & orientation  
         """
+        self._led.update(event, data)
         self._ready_flag.set()
         super().report_event(event, data)
 
@@ -144,6 +160,32 @@ class DCCBlkDet(Device):
         - Device.BLK_OCC: the block is occupied
         """
         return self._blk_state
+    
+    async def _get_reading(self):
+        i2c_addr, conf = _adc_addr[self._adc]
+        async with DCCBlkDet._i2c_lock:
+            try:
+                _i2c.writeto_mem(i2c_addr,_ADC_CONF_ADD,conf) # start read
+                while True:
+                    # let other stuff run
+                    asyncio.sleep_ms(0)
+                    res = _i2c.readfrom_mem(i2c_addr,_ADC_CONF_ADD, 2)
+                    if (res[0] & 0x80) != 0:
+                        break   # we have a result
+                res = _i2c.readfrom_mem(i2c_addr, 0, 2) # read reg 0 (result register)
+            except OSError:
+                # i2c error - no track power most likely
+                return None
+
+        # this is a 12 bit signed (2's comp) value but left aligned.  L.S 4 bits always 0
+        value = (res[0] << 4) + (res[1] >> 4)
+        if (res[0] & 0x80) != 0:
+            value = ((~value & 0x0fff) + 1) * -1
+        return value
+ 
+
+
+
 
     async def _monitor(self):
         """ Coroutine to monitor current 
@@ -159,8 +201,10 @@ class DCCBlkDet(Device):
         RailCom doesn't permit '0' stretching. Readings that might represent
         saturated op. amp. output are ignored as these may be asymetric.
         The remaining readings are filtered using a low pass Infinite Impulse
-        Response (IIR) digital filter andthe result is taken as being the zero
-        offset.
+        Response (IIR) digital filter and the result is taken as being the zero
+        offset. In theory the DCC signal measurement now uses a differential
+        ADC so the offset should be 0 but in practice a small offset remains,
+        possibly due to an offset error in the analogue amplifier.
 
         Secondly the value representing the current load is calculated.
         The input to this is the magnatude of the difference between the
@@ -180,48 +224,57 @@ class DCCBlkDet(Device):
         """
         while True:
             await asyncio.sleep_ms(_TIMER_PERIOD)
-            reading = self._adc.read_u16()
-            # reject potentially clipped readings from zero reference
-            if 1600 < reading < 63936:
-                # apply IIR low pass filter to zero base offset
-                self._base = self._base * _Z_FILTER_RATIO + reading / _Z_FILTER_FACTOR
-            
-            # take the absolute difference between zero base and the reading
-            # and apply the LULU filter
-            # Typically a LULU filter comprises two functions.  The L function
-            # removes +ve going spikes and the U function removes -ve going
-            # spikes. Here we only need the U function.
+            reading = await self._get_reading()
+            if reading is None:
+                # no power
+                if self._blk_state != Device.BLK_NPOW:
+                    self._blk_state = Device.BLK_NPOW
+                    self.report_event(Device.BLK_NPOW, None)
 
-            self._readings.append(abs(reading - int(self._base + 0.5)))
-            if len(self._readings) > _LULU_SIZE:
-                self._readings.pop(0)
-                    
-            # LULU filter U funtion (width hard coded for buffer size 7)
-            op_u = min(max(self._readings[0:3]),
+            else:
+
+                self._offset = self._offset * _Z_FILTER_RATIO + reading / _Z_FILTER_FACTOR
+                
+                # take the absolute difference between zero offset and the reading
+                # and apply the LULU filter
+                # Typically a LULU filter comprises two functions.  The L function
+                # removes +ve going spikes and the U function removes -ve going
+                # spikes. Here we only need the U function.
+
+                self._readings.append(abs(reading - int(self._offset + 0.5)))
+                if len(self._readings) > _LULU_SIZE:
+                    self._readings.pop(0)
+                        
+                # LULU filter U funtion (width hard coded for buffer size 7)
+                op_u = min(max(self._readings[0:3]),
                         max(self._readings[1:4]),
                         max(self._readings[2:5]),
                         max(self._readings[3:6]))
 
-            # apply IIR low pass filter to this reading
-            self._av = self._av * _FILTER_RATIO + op_u / _FILTER_FACTOR
+                # apply IIR low pass filter to this reading
+                if self._readings[6] > self._av:
+                    self._av = self._readings[6]
+                else:
+                    self._av = self._av * _FILTER_RATIO + op_u / _FILTER_FACTOR
 
-            #print(self._readings[3], op_u, self._av)
-            # check against thresholds
-            if self._blk_state != Device.BLK_OCC and self._av > _U_THRESHOLD:
-                self._blk_state = Device.BLK_OCC
-                self.report_event(Device.BLK_OCC, None)
-            elif self._blk_state != Device.BLK_EMPTY and self._av < _L_THRESHOLD:
-                self._blk_state = Device.BLK_EMPTY
-                self.report_event(Device.BLK_EMPTY, None)
+                # check against thresholds
+                if self._blk_state != Device.BLK_OCC and self._av > _U_THRESHOLD:
+                    self._blk_state = Device.BLK_OCC
+                    self.report_event(Device.BLK_OCC, None)
+                elif self._blk_state != Device.BLK_EMPTY and self._av < _L_THRESHOLD:
+                    self._blk_state = Device.BLK_EMPTY
+                    self.report_event(Device.BLK_EMPTY, None)
 
 
 if __name__ == '__main__':
+    from led_pio import BlkLed
     async def lp():
         while True:
+            Device.get_event_report(False)
             try:
                 await asyncio.sleep(1)
             except KeyboardInterrupt:
                 break
 
-    s = DCCBlkDet('t001',ADC(28))
+    s = DCCBlkDet('t001',1, BlkLed(1))
     task = asyncio.run(lp())

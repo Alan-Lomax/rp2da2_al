@@ -112,8 +112,6 @@ async def main():
     # List of MQTT agents to be started.
     MQTT_LIST = [Block(RComBlkDet('1011', RC1A_STATE_MC, c1a_rx_pin)),
                 Block(RComBlkDet('1012', RC1B_STATE_MC, c1b_rx_pin)),
-                Sensor(DCCBlkDet('1011', ADC(26))),
-                Sensor(DCCBlkDet('1012', ADC(27))),
                 Will("track/state", MQTTClient.QOS1)]
 
 

@@ -7,10 +7,10 @@ we only expect a short string of LEDs and there will only be one string per boar
 
 This version uses a PIO state machine to drive the LEDs.
 
-Only one string of max. length four LEDs is supported on GPIO 22 
+Only one string of max. length five LEDs is supported on GPIO 22 
 
 """
-"""       Copyright 2025  Paul Redhead
+"""       Copyright 2025, 2026  Paul Redhead
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -30,6 +30,8 @@ from machine import Pin
 from micropython import const
 import rp2
 import array
+
+from device import Device
 
 # pyright: reportUndefinedVariable=false
 
@@ -52,7 +54,7 @@ def ws2812_tx():
     wrap()
 
 
-_MAX_LEN = const(4)
+_MAX_LEN = const(5)
 _PIN = 22
 _SM = 5 # State Machine number for RP2040 (Pico, PicoW etc) 
 _SM_P2 = 9 # State Machine number for RP2350 (Pico2, Pico2W)
@@ -88,7 +90,6 @@ class NeoLed():
         This sets the initial RGB.
 
         args:
-            led_string: The NeoPixel string to which this LED belongs.
             string_index: The index of the LED in the string.
         """
         self._rgb = [0, 0, 0]   # set initial RGB values.
@@ -124,8 +125,7 @@ class NeoLed():
 
         This clears the colour of the LED
         args:
-            colour: The colour to clear.  This should be one of NeoLed.LED_R,
-            NeoLed.LED_G or NeoLed.LED_B.
+            colour: The colour to clear.  This should be one of NeoLed.LED_R, NeoLed.LED_G or NeoLed.LED_B.
         """
         try:
             self._rgb[colour] = 0
@@ -135,6 +135,61 @@ class NeoLed():
         except KeyError:
             # quietly ignore invalid colour
             pass
+
+class BlkLed(NeoLed):
+    """ Led used to indicate block status
+    
+    This controls a NeoString led thats used to indictate overall block status
+    as determined by both current sensing and RailCom channed 1 returns
+    """
+
+    def __init__(self, string_index):
+        super().__init__(string_index)
+        self._rc_state = Device.UNKNOWN
+        self._oc_state = Device.UNKNOWN
+
+    def update(self, event, data):
+        """Update led
+        
+        The led is updated to reflect the RailCom or current based
+        occupancy.
+        
+        RailCom Ch1 takes precedence.
+        args:
+            event: event code
+            data: associated data"""
+        if event == Device.BLK_CH1: # rc ch1 report
+            if data is None:
+                # no data - empty
+                if self._oc_state == Device.BLK_OCC:
+                    self.set(NeoLed.LED_G, False) # show occupied - no RC data
+                    self._rc_state = Device.BLK_EMPTY
+                self.clear(NeoLed.LED_B) # clear RC occupied
+                
+            else:
+                # RC occupied
+                self.clear(NeoLed.LED_R, False) # clear no power 
+                self.clear(NeoLed.LED_G, False) # suppress current occupied
+                self.set(NeoLed.LED_B) # set RC occupied
+                self._rc_state = Device.BLK_OCC
+        elif event == Device.BLK_OCC: # current detected
+            self._oc_state = Device.BLK_OCC
+            if self._rc_state != Device.BLK_OCC:
+                self.clear(NeoLed.LED_R, False)
+                # we can show it
+                self.set(NeoLed.LED_G) # show occupied - no RC data
+        elif event == Device.BLK_EMPTY: # current lost
+            self._oc_state = Device.BLK_EMPTY
+            self.clear(NeoLed.LED_R, False) # any event clears no power or ch1 fault 
+            if self._rc_state != Device.BLK_OCC:
+                # we can show it
+                self.clear(NeoLed.LED_G) # show block clear
+        elif event == Device.BLK_NPOW: # no power
+            self._oc_state = Device.BLK_NPOW
+            self.clear(NeoLed.LED_G, False) # suppress current occupied
+            self.clear(NeoLed.LED_B, False) # set RC occupied
+            self.set(NeoLed.LED_R, val = 10) # not too bright
+
 
 
 class NeoString():
@@ -169,12 +224,9 @@ class NeoString():
     def __init__(self):
         """Initialise the NeoPixel string
         
-        This initialises the NeoPixel string with the given pin and length.
+        This initialises the NeoPixel string.
         If the singleton already exists then an exception is raised.
 
-        args:
-            pin: The GPIO pin to which the NeoPixel string is connected.
-            ps_len: The length of the NeoPixel string.
         """
         if NeoString._this_string is not None:
             raise RuntimeError("Only one LED string allowed")
@@ -205,8 +257,9 @@ class NeoString():
         r, g, b = rgb
         self._buff[i] = (g << 16) + (r << 8) + b
 
-    def write(self, count = 4):
+    def write(self, count = _MAX_LEN):
         #print(bytes(memoryview(self._buff)[:count]))
+        # least sig. 3 bytes contain led values so shift left eight
         self._sm.put(memoryview(self._buff)[:count], 8)
 
 

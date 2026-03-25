@@ -405,8 +405,7 @@ class RailComRead(Device):
         The state machine clock is set at 16 x the bit rate. (4 MHz)
 
         There's no programatic way back to the first instruction within the PIO program.  The
-        state machine is restarted by the controlling application externally forcing execution
-        of a jump to the first instruction.
+        state machine is restarted by the controlling application externally forcing a reset.
 
         Reading is stopped if an overrun error occurs.
 
@@ -466,7 +465,7 @@ class RailComRead(Device):
         
         A second input pin is not  used to determine the orientation and the code
         does not process it, thereby saving 3 instructions when compared with the local
-        verstion. In other respects the code is identical.
+        version. In other respects the code is identical.
 
         The state machine clock is set at 16 x the bit rate. (4 MHz)
 

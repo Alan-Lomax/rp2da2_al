@@ -191,7 +191,6 @@ class DCCCmdTx:
 
         #  set x to default value for OSR to be used if FIFO empty
         #  0 for '0's
-        #  9 ticks from here to 'nxt_bit' for both paths
         set(x, 0)                   [0]
         # pull word from FIFO
         # 32 bits are pulled - 2 by 9 bit outputs
