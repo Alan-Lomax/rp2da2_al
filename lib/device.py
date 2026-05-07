@@ -17,7 +17,7 @@ Sources are typically event driven and use a combination of hardware interrupts 
 timer call-backs.
 
 In the RP2 MicroPython implementaton all interrupts (both hard and soft) are processed in
-core 0. Core 1 always runs in nob - interrupt context.
+core 0. Core 1 always runs in non - interrupt context.
 
 If using both cores, the structure of the application has to be designed to accomodate
 this.  Device drivers run on core 0. Core 1 runs a main loop which reads the queue and processess entries as they
@@ -73,6 +73,7 @@ class Device():
         BLK_EMPTY: Block unoccupied
         BLK_CH1: Block occupied - RailCom channel 1 info.
         BLK_OCC: Block occupied - Load detected but no info.
+        BLK_NPOW: Block not powered.
         POM_CV:  event code for reporting a CV value from read or write.
         POM_TO:  event code for reporting POM access timeout.
         POM_NAK: event code for reporting NAK received.
@@ -112,7 +113,7 @@ class Device():
     # MQTT Client
 
     # 40 not used
-    MC_SET_LED      = const(41) # Instruction to set Comms led - data is colour, value (0 or 1)
+    MC_OS_ERR       = const(41) # OS Error on write or read
     MC_READY        = const(43) # initial subscriptions registered
     MC_CONNECT_ERR  = const(48) # MQTT connect error 
 

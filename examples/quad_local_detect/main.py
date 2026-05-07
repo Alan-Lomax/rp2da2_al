@@ -103,7 +103,8 @@ def build_config(blocks):
     i = 0
     for blk_name in blocks:
         led = BlkLed(i + 1) # first led reserved for comms status
-        m_lst.append(Block(RComBlkDet(blk_name, state_machine[i], rx_pin[i], led)))
+        # DCC power sense pin is 27 - common to all blocks
+        m_lst.append(Block(RComBlkDet(blk_name, state_machine[i], rx_pin[i], led, 27)))
         m_lst.append(Sensor(DCCBlkDet(blk_name, i, led)))
         i = i + 1
     m_lst.append(Will("track/state", MQTTClient.QOS1))
@@ -114,8 +115,7 @@ async def main():
 
     Hardware allocations are defined for IO Pins and PIO State machines.
     This function sets up the MQTT client and starts the main loop.
-    MQTT agents are set for the channel 1 block detectors
-    The main loop polls the MQTT client
+    MQTT agents are set for the channel 1 block detectors.
     """
     # this runs forever
     await MQTTClient.get_instance().run(build_config(('1011', '1012', '1013', '1014')))
@@ -125,8 +125,7 @@ def main1():
     """ Main function for the RP2 second core (core 1) application.
     
     This function sets up the screen.
-    It also enters a loop to read event reports and update the screen and
-    NeoString accordingly.
+    It also enters a loop to read event reports and update the screen.
     """
     s = Screen().get_instance()
     s.show_screen(screen_splash())

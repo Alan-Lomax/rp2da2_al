@@ -45,7 +45,7 @@ from screen import Screen
 from dcc_rc_ch1 import RComBlkDet
 from dcc_rc_pio import RailComRead
 from blk_mon import DCCBlkDet
-from led import NeoString
+from led_pio import NeoString
 
 # MQTT imports
 from mqtt import Will, Block, Sensor
@@ -122,17 +122,14 @@ def main1():
     """ Main function for the RP2 second core (core 1) application.
     
     This function sets up the screen and NeoString objects.
-    It also enters a loop to read event reports and update the screen and
-    NeoString accordingly.
+    It also enters a loop to read event reports and update the screen.
     """
     s = Screen().get_instance()
-    np = NeoString(Pin(22),2)
     s.show_screen(screen_splash())
 
     while True:
         report = Device.get_event_report() # wait until event received
         s.show_event(report)
-        np.show_event(report)
 
 
 if __name__ == '__main__':

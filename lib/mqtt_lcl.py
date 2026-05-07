@@ -51,6 +51,9 @@ class Block(MQTTAgent):
     REPORTER_TOPIC_PREFIX = "track/reporter"
 
     def __init__(self, rc_block):
+        """Construct the Block agent
+        
+        Create object variables and initialise the base Agent class topic and QoS"""
         self._rc_block = rc_block # RailCom block
         self._name = rc_block.get_name()
         self._last_blk_state = RComBlkDet.UNKNOWN
@@ -70,7 +73,7 @@ class Block(MQTTAgent):
             ret_flag: True if this is a retained publication
             payload: the payload of the publication as a string
         """
-        print("Reporter", topic, payload)
+        pass
 
     async def _pub_check(self):
         """ Publication check
@@ -113,9 +116,15 @@ class Sensor(MQTTAgent):
     SENSOR_PAYLOAD = {DCCBlkDet.BLK_EMPTY:"INACTIVE",
                        DCCBlkDet.BLK_OCC:"ACTIVE",
                        DCCBlkDet.BLK_NPOW:"INACTIVE"}
+    """Sensor payload look up
+    
+    Dictionary to translate internal status to reported status"""
     
 
     def __init__(self, sensor):
+        """Construct the Sensor agent
+        
+        Create object variables and initialise the base Agent class topic and QoS"""
         self._sensor = sensor 
         self._name = sensor.get_name()
         super().__init__(f'{Sensor.SENSOR_TOPIC_PREFIX}/{self._name}/set', MQTTClient.QOS1)
@@ -134,7 +143,7 @@ class Sensor(MQTTAgent):
             ret_flag: True if this is a retained publication
             payload: the payload of the publication as a string
         """
-        print("Sensor", topic, payload)
+        pass
 
     async def _pub_check(self):
         """ Publication check

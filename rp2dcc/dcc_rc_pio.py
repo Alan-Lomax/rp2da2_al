@@ -44,23 +44,12 @@ from device import Device
 _PIO_CU_FREQ = const(250_000)           # 250 kHz - 4 micro sec. tick period for command stn. cutout timing
 _PIO_CU_D_FREQ = const(500_000)         # 500 kHz - 2 micro sec. tick period for block detect cu timing
 _PIO_RX_FREQ = const(4_000_000)         # 4MHz - 16 * 250kHz bps rx clock rate for async. rx
-   
 
-# memory mapped addresses and offsets of PIO registers (as defined in the RP2040 datasheet)
-# not used at moment - retained for potential diagnostic needs
-PIO0_BASE = const(0x50200000)
-""" PIO  0 base address"""
-PIO1_BASE = const(0x50300000)
-""" PIO 1 base address """
-SM1_EXECCTRL = const(0xe4)
-""" State machine 1 exec control offset """
-SM3_EXECCTRL = const(0x114)
-""" State machine 3 exec control offset """
 
 class RailComRead(Device):
-    """ The RailComm Reader class
+    """ The RailCom Reader class
     
-    This class schedules and executes RailComm datagram read activities during the cutout period. During
+    This class schedules and executes RailCom datagram read activities during the cutout period. During
     the cutout period, the DCC power signal is ceased and the two DCC lines are short circuited allowing the 
     RailCom current signal to be generated and detected. On the command station the cutout is instigated by the
     enable signal to the DRV8874 being set low. This cutout signal being low is used directly when detecting
@@ -141,7 +130,6 @@ class RailComRead(Device):
     # IDs >= 64 are internally generated datagrams
     DG_RESP = const(0x40) # protocol control byte
 
-
     _H4LU = {
     0xAC:0x00, 0xAA:0x01, 0xA9:0x02, 0xA5:0x03,
     0xA3:0x04, 0xA6:0x05, 0x9C:0x06, 0x9A:0x07,
@@ -169,21 +157,6 @@ class RailComRead(Device):
 
     See RCN-217 2.5.
     """
-
-    _RESTART_MEM = {1:PIO0_BASE + SM1_EXECCTRL,
-                    3:PIO0_BASE + SM3_EXECCTRL,
-                    5:PIO1_BASE + SM1_EXECCTRL,
-                    7:PIO1_BASE + SM3_EXECCTRL}
-    """Memory locations for restart calculation by MP state machine number
-
-    **TODO** not currently used - retain for potential diagnostic needs.
-    """
-    _IP_MEM = {1:PIO0_BASE + 0xec,
-                    3:PIO0_BASE + 0x11c,
-                    5:PIO1_BASE + 0xec,
-                    7:PIO1_BASE + 0x11c}
-    
-    av_time = 0
 
     @staticmethod
     def hw4_2_6b(rawd):
@@ -214,7 +187,7 @@ class RailComRead(Device):
                     
             return(RailComRead.ERR_WL)    
 
-    def __init__(self, dev_name, cu_sm_num, rc_rx_pin, cu_pin = None):
+    def __init__(self, dev_name, cu_sm_num, rc_rx_pin, *, cu_pin = None, dcc_pin = None):
         """ RailCom class constructor
 
         Constructs a reader for Channel 1 (local block detector) or Channel 2 (global detector) using two PIO state machines.
@@ -222,24 +195,29 @@ class RailComRead(Device):
         The cutout monitor state machine runs on the supplied state machine number.  The receive state machine
         runs on the number + 1.
 
-        If no cutout pin is supplied then it's assumed we are on an accessory controller and
-        the for Channel 1 cutout is to be detected by monitoring the inputs. The cutout pin must be supplied
-        for Channel 2 operation.
+        1 and only 1 of cu_pin or dcc_pin must be specified. If dcc_pin is specified, this is the DCC sense pin on a local
+        detector. If cu_pin is specified this is the DRV8874 enable pin. Depending on which pin is specified a local or
+        global detector is constructed.
+
+        N.B the pins work in opposite senses. DRV8874 enable is low during the cutout.
+        The DCC power on pin is high during the cutout!
 
         args:
             dev_name: for channel 1 this will be the block name
             cu_sm_num: state machine number for cut out scheduling - 4 or 6 if using the second PIO block
             rc_rx_pin: the detector output pin (pin + 1 is the orientation detect pin)
-            cu_pin: the DRV8874 enable pin (command station usage only)
+            cu_pin: cutout indicator (global detector)
+            dcc_pin: DCC sense (track power on or off - local detector)
         """
+        assert cu_pin is not None or dcc_pin is not None, "cu or dcc pin must be provided"
         # set up cutout detect PIO state machine 
-
-        if cu_pin is None:
+        if dcc_pin is not None:
             # channel 1 - local block detection
             self._max_buf = 2
             self._sm = rp2.StateMachine(cu_sm_num, self._cut_out1_bd,
                                             freq = _PIO_CU_D_FREQ,
-                                            in_base = rc_rx_pin, jmp_pin = rc_rx_pin)
+                                            in_base = dcc_pin,
+                                            jmp_pin = dcc_pin)
             self._rx = self._rx_lcl
         else:
             # Channel 2 on command station
@@ -257,24 +235,8 @@ class RailComRead(Device):
                                       in_base = rc_rx_pin,
                                       jmp_pin = rc_rx_pin)
         
-        self._read_ref = self._read_soft # set up reference for hard isr
+        self._read_ref = self._read_soft # set up reference for use by hard isr
 
-        self._restart = ((mem32[RailComRead._RESTART_MEM[cu_sm_num + 1]] & 0xf80) >> 7) - 1
-        self._ip_address = RailComRead._IP_MEM[cu_sm_num + 1]    
-        """PIO restart instruction
-
-        **TODO** not used at the moment - to be removed later.
-
-        This generates the PIO op code required to restart the rx state machine which must run in
-        sm 1, 3, 5 or 7
-        corresponding to PIO state machines 1 or 3 on the PIO.
-        
-        Read the wrap address from the PIO exec control register and subtract 1
-        for the first PIO instruction of state machine 1, 3, 5 or 7 (the rx program).
-        Unconditional 'jmp' opcode is 0 so the address is the jump instruction!
-
-        Raises KeyError if state machine number invalid. 
-        """
         self._rx_buff = bytearray(6) # translated buffer - max is 6 bytes for channel 2
         self._rx_raw = array.array('H', range(8)) # raw buffer for PIO - 8 words to match FIFO
         self._gash = array.array('H', (0,))
@@ -282,14 +244,13 @@ class RailComRead(Device):
         # soft reset might not do this so:
         while self._smrx.rx_fifo() > 0:
             self._smrx.get(self._gash)
-        self._smrx.exec(self._restart) # belt and braces reset!
         self._smrx.restart()
         self._sm.active(True)       # start both state machines
         self._smrx.active(True)
         super().__init__(dev_name,
                        RailComRead.LCL_DEVICE_TYPE if cu_pin is None else RailComRead.GBL_DEVICE_TYPE)
 
-    def _rail_com_msg(self, buffer, orientation):
+    def _rail_com_msg(self, buffer):
         """ Process the RailCom Response
         
         This must be overriden by a bound method in the inheriting class.
@@ -305,7 +266,7 @@ class RailComRead(Device):
         """ The Cutout state machine monitor program (channel1 / block detect)
 
         This version is for use on a pico in use as an RailCom block detector.
-        The cutout is detected by analysis of the current monitor output. This
+        The cutout is detected by monitoring the DCC power on the track. This
         enables reading during the channel 1 window. The cutout timings in µs:
 
         0 - Packet end trailing edge
@@ -315,32 +276,25 @@ class RailComRead(Device):
         28 + 446 = 474 cutout ends (timed in DCCGen)
 
         The clock is 500 kHz. 2 µs per tick
-        11 instructions
+        7 instructions
 
         Once the read ISR is triggered the program freezes until reset and restarted by
         the parent application.
         """
-        # assumed start state is block unoccupied - current 0 - (rx pin high)
-        label("unoccupied")
-        wait(0, pin, 0)     [31]       # wait until current detected/block occupied then pause to reconfirm
-        jmp(pin, "unoccupied")          # reverted back to unoccupied if < 64µs
-        # block now occupied
-        label("occupied")
-        # filter out any short breaks in occupancy (DCC crossover etc)
-        nop()               [1]
-        set(y, 9)                       # take 10 consecutive samples
-        label("spin")
-        jmp(pin,"spin2")                
-        jmp("occupied")
-        label("spin2")
-        jmp(y_dec, "spin")      # count not exhausted yet
-        
-        # break > 46 µs - potential cutout start - treat as such
-        # PEB + 72 to + 78 µs
+        wait(0, pin, 0)     [0]        # if power off wait for power on to ensure clean start
+        wrap_target()
+        wait(1, pin, 0)     [22]       # wait power off then reconfirm
+        jmp(pin, "cu_conf") [1]        # power still off + 2 µs
+        wrap()                         # reverted back to power_on if < 44µs (too short for cutout)
+
+        # cutout start confirmed
+        label("cu_conf")
+        # break > 44 µs - potential cutout start - treat as such
+        # now 46 µs after cu start - PEB + 72 to + 78 µs
         irq(rel(5))         [31] # start of ch1 window - release the datagram receiver 
         nop()               [20] # ch1 end 
         # PEB + 178 to 184 µs - ch1 end is PEB +177
-        irq(rel(0))         [31] # end of channel 1 window - initiate read
+        irq(rel(0))         [0] # end of channel 1 window - initiate read
         label("freeze")
         jmp("freeze")       [0]  # wait to be restarted to avoid race
     
@@ -397,9 +351,6 @@ class RailComRead(Device):
         The second input pin is the first comparator side.  This may be used to determine which side is
         active, thus indicating which way the locomotive is facing relative to the track DCC.
 
-        The second pin may be NC or used for other purposes, in which case the indication of the
-        active side will be indeterminate.
-
         The osr is used as an additional register.  It's not in use for transmission.
 
         The state machine clock is set at 16 x the bit rate. (4 MHz)
@@ -419,7 +370,7 @@ class RailComRead(Device):
         # so we sample it 6 times following the initial edge
         set(y,5)                [0]       
         wait(0, pin, 0)         [0] # wait for start bit leading edge - 2 ticks between samples
-        mov(osr, pins)          [0] # get start bit ('0') and orientation (can't get orientation only!)
+        mov(osr, pins)          [0] # get start bit ('0') and orientation
         label("spin")
         jmp(pin,"await_start")  [0] # back to '1', not long enough for start bit
         jmp(y_dec, "spin")      [0] # spin for next sample
@@ -427,7 +378,7 @@ class RailComRead(Device):
         label("start_ok")
         out(y,1)                [0] # shift out start bit  & discard leaving orientation in osr
         set(y, 7)               [8] # 11 ticks in total from last sample to mid 1st bit.
-
+                                    # y set to count 8 bits
         label("next_bit")
         in_(pins,1)             [0] # read next bit into isr
         jmp(y_dec,"next_bit")   [14] # wait 15 more ticks - 16 ticks in total  
@@ -527,7 +478,11 @@ class RailComRead(Device):
         """Soft PIO read ISR
         
         Read PIO FIFO into buffer.  Needs to be soft for memoryviews to  work
-        Common to both channel 1 & 2
+        Common to both channel 1 & 2.
+
+        The raw buffer is in words - bits 0 - 7 data byte as received
+        bit 8 (the orientation bit)
+        overrun error is reported as all '1's
 
         There must be at least 1 entry in the buffer.
         
@@ -538,31 +493,14 @@ class RailComRead(Device):
         raw_buff = memoryview(self._rx_raw)[:rxc]
         self._smrx.get(raw_buff)  # read data into raw buffer
         self._smrx.restart() # reset internals (inc. IP)
-        if self._restart != mem32[self._ip_address]:
-            raise RuntimeError(hex(mem32[self._ip_address]))
         self._smrx.active(1)    # restart sm (it's now been reset)
         self._sm.active(1)      # and restart monitor
-        # the raw buffer is in words - bits 0 - 7 data byte as received
-        # bit 8 (the orientation bit) is ignored on all but first byte
-        # overrun error is reported as all '1's
-
-        # side is saved as 1 or -1 e.g. s * 2 - 1
-        # this is the orienation of the decoder wrt the DCC signal
-        # orientation is invalid in case of character overrun (all '1's)
-        try:
-            detector_side = ((raw_buff[0] & 0x100) >> 7) - 1
-        except IndexError:
-            # just in case!
-            m = disable_irq()
-            self._ql = False # allow next read to be decoded
-            enable_irq(m)
-            return
 
         if rxc > self._max_buf:
             # quietly truncate the buffer if over channel len
             raw_buff = raw_buff[:self._max_buf]
-
-        self._rail_com_msg(raw_buff, detector_side)
+        # call channel specific code
+        self._rail_com_msg(raw_buff)
         m = disable_irq()
         self._ql = False # allow next read to be decoded
         enable_irq(m)

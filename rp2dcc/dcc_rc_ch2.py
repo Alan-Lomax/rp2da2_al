@@ -118,7 +118,7 @@ class RComCmdRsp(RailComRead):
         self._errors = {} # error counts
         self._dgs = set() # Datagrams seen
 
-        super().__init__('cmd', rc_sm_num, rx_pn, enable_pn)
+        super().__init__('cmd', rc_sm_num, rx_pn, cu_pin = enable_pn)
 
     def get_error_counts(self):
         """ Get Error Counts
@@ -154,7 +154,7 @@ class RComCmdRsp(RailComRead):
         except KeyError:
             self._errors[error_code] = 1
 
-    def _rail_com_msg(self, buffer, _):
+    def _rail_com_msg(self, buffer):
         """Process RailCom Channel 2 response
         
         This is called on termination of the RailCom Channel 2 message receipt window,
@@ -168,7 +168,6 @@ class RComCmdRsp(RailComRead):
 
         args:
             buffer:   raw data
-            _: orientation of DCC decoder wrt DCC signal - not used
         """
         cmd = CommandPacket.get_last_command()
         if cmd is None:

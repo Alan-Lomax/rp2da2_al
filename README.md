@@ -8,13 +8,16 @@ Model Railway Distributed Automation for RP2 (and other MicropPython MCUs).
 
 The primary target Micro Controller Units for this project are Raspberry Pi RP2
 based and run MicroPython V1.26 or later. Testing has principly taken place on
-Pico, Pico W and Arduino Nano RP2040 Connect platforms. Elements of the application
-may run on other MicroPython capabable platforms with no, or minor modifications.
+Pico, Pico W, Pico 2W and Arduino Nano RP2040 Connect platforms.
 DCC and RailCom components use the RP2 Programmable IO peripheral so must be run
-on an RP2 based MCU. RP2350 based MCUs such as the Pico 2 W are acceptable too.
+on an RP2040 or RP2350 based MCU.
+Other application components
+may run on other MicroPython capabable platforms with no, or minor modifications.
 
-Primary components are a command station with integrated booster/RailCom cutout and
-global RailCom detector.
+Primary components are:
+
+- a command station with integrated booster/RailCom cutout and global RailCom detector
+- a local RailCom detector module with up to four detectors and current based occupancy detection.
 
 A booster is required to convert the DCC signal into a form suitable for
 suppling power directly to track. The reference booster is the Texas
@@ -26,7 +29,7 @@ RailCom detectors have been specifically designed for this project with circuit
 schematics and PCB designs for both command station and local detectors. The PCB designs
 and applications have been designed around a standard set of GPIO pin
 allocations. The local RailCom detector also provides a block occupancy indication using
-conventional current flow detection. This triggers at a nominal 1 mA enabling detection of 10kΩ wheel set resistors.
+conventional current flow detection. This triggers at a nominal 1 mA enabling detection of 10 kΩ wheel set resistors.
 SPI1 and other GPIO pins not currently used by the application suite
 may be exposed PCB on headers.
 
@@ -52,12 +55,17 @@ Pin allocations on other platforms may differ.
 |NC|DRV8874 Vref|
 |22|NeoPixel chain (2 LEDs)|
 
-The following table shows pin allocations for a four local detector on a Pico series
+The following table shows pin allocations for a four block local detector on a Pico series
 platform. Pin allocations on other platforms may differ. Other platforms may be able to
 support additional local detectors.
 
 I2C0, I2C1 and SPI1 pin assignments follow the MicroPython default pin assignments for
 these peripherals.
+
+SPI1 may be wired to a PCB header for off board connection.
+
+I2C1 is used to support conventional current based detector functions.
+It may be wired to a PCB header for off board connection too.
 
 |GPIO Pin|Pico / Pico W|
 |---|---|
@@ -65,11 +73,12 @@ these peripherals.
 |5|OLED I2C0:scl|
 |6|I2C1:sda|
 |7|I2C1:scl|
-|6|SPI1 CS(secondary)|
 |8|SPI1 MISO|
 |9|SPI1 CS(primary)|
 |10|SPI1 SCK|
 |11|SPI1 MOSI|
+|12|SPI1 additional GPIO (e.g. interrupt)|
+|13|SPI1 CS(alternative)|
 |14|RailCom ch 1 (a) rx|
 |15|RailCom ch 1 (a) orientation|
 |16|RailCom ch 1 (b) rx|
@@ -79,6 +88,8 @@ these peripherals.
 |20|RailCom ch 1 (d) rx|
 |21|RailCom ch 1 (d) orientation|
 |22|NeoPixel chain (5 LEDs)|
+|26|User press button|
+|27|RailCom cutout detect|
 
 ### Programmable Input/Output & State Machines
 
@@ -92,7 +103,7 @@ the State Machines on these as 0 to 7 and 0 to 11 respectively.
 Note that the tables show the default radio state
 machines as grabbed if available by the MicroPython
 Wi-Fi module/RP SDK library.
-The MicroPython application leaves these
+The MicroPython application code leaves these
 free for the radio rather than specifically
 allocating them.
 
@@ -103,11 +114,11 @@ allocating them.
 |0|DCC generation|
 |1 - 3|Not available. DCC generation uses virtually all PIO 0 memory|
 |4|Radio on Pico W|
-|5|NeoPixel on Pico|
+|5|NeoPixel on Pico / Pico W|
 |6|RailCom Channel 2 timing|
 |7|RailCom Channel 2 RX|
 |8|Radio on Pico2 W|
-|9|NeoPixel on Pico2|
+|9|NeoPixel on Pico2 / Pico2 W|
 
 #### Local Detector
 
@@ -122,7 +133,7 @@ allocating them.
 |6|Block D RailCom Channel 1 timing|
 |7|Block D RailCom RX|
 |8|Radio on Pico2 W|
-|9|NeoPixel on Pico2|
+|9|NeoPixel on Pico2 / Pico2 W|
 
 ## Software Modules
 
@@ -133,7 +144,7 @@ drivers and similar objects.
 
 **oled0_91** - Module for 0.91 inch OLED on i2c0
 
-**led** - Module to drive ws2812 LEDs or similar.  A string of up to 4 LEDs is supported.
+**led** - Module to drive ws2812 LEDs or similar.  A string of up to five LEDs is supported.
 The first LED displays the backend communications state. Additional LEDs display the
 command station track status or local block status as appropriate.
 
@@ -141,7 +152,8 @@ command station track status or local block status as appropriate.
 
 ### Communications
 
-**mqtt_client** - This provides a simple MQTT client.
+**mqtt_client** - This provides a simple MQTT client. Use of MQTT requires an MQTT broker. E.g Mosquitto. There are ports
+of this for Windows, MAC/OS, and Linux (e.g. Ubuntu, Raspberry Pi OS).
 
 **mqtt\*** - Other MQTT modules provide interfaces for MQTT devices and agents.
 These may be used with JMRI but JMRI MQTT specifications will need to be
@@ -169,7 +181,7 @@ DCC Command Serialisation for use with RailCom detection.
 command station global detector mobile responses on Channel 2.
 
 **trk_mon** - This module monitors the booster and track status by looking at the DRV8874
-enable, fault and current sense pins.
+sleep, enable, fault and current sense pins.
 
 #### Local RailCom Detector Modules
 
@@ -205,13 +217,60 @@ The config file specifies:
 - host name - the name to be used by local machine. This needs to be changed
 from the MicroPython default to avoid duplicates.
 
+```json
+{"country": "myCountry", "password": "myPassword", "ssid": "mySSID", "hostname":"myHostName"}
+```
+
 ### MQTT
+
+***Pico Configuration***
 
 The config file specifies:
 
 - the MQTT broker's host name
-- the local machine client ID.  The client id is required as mosquitto does not permit anonymous access.
+- the local machine client ID.  The client id is required as by default Mosquitto will not permit access without it. However if not specified here the client id will be set to the network host name.
 - port - the MQTT port number. By default this is set to 1883 and this setting may be ommitted.
+
+```json
+{"broker": "myBroker", "clientId": "myClientName", "port": 1883}
+```
+
+On the command station the MQTT connection supports track power and cabs.
+On the local detector the MQTT connection supports sensor updates and reporters.
+The MQTT connection may be used to communicate with JMRI.
+Generally topics match those used by JMRI but some modifications are required to JMRI defaults
+as configured on the MQTT connections settings.
+
+***Mosquitto Configuration***
+
+The Mosquitto configuration file is held in mosquitto.conf. The location of the file is OS dependent.
+For Raspberry Pi OS it's
+
+```text
+/etc/mosquitto/mosquitto.conf
+```
+
+A couple of lines may need to be added.
+
+```text
+allow_anonymous true
+
+listener 1883
+```
+
+Note that connections to Mosquitto will not be authenticated. Do not do this unless inward connections to your network are blocked (or you don't mind aliens hacking your model railway).
+
+***JMRI MQTT Configuration***
+
+  Check 'Additional Connection Settings' under
+Preferences->Connections for the MQTT connection to access the JMRI MQTT configuration.
+
+|Setting|Value|
+|---|---|
+|Sensor send topic:|track/sensor/{0}/set|
+|Sensor receive topic:|track/sensor/{0}/event|
+|Power send topic:|track/power/set|
+|Power receive topic:|track/power/event|
 
 ---
 
@@ -220,9 +279,10 @@ The config file specifies:
 ### General
 
 Copy the python (.py) files from the lib and rp2dcc directories to the Pico using Thonny or similar.
-Don’t replicate the repository directory structure,
-just copy to the top level or if you want to be tidier
-you can copy the .py files to the lib directory. Don’t bother with the \_\_init\_\_.py  files.
+Don’t replicate the repository directory structure. Copy the files from both directories to the lib directory at the Pico files system top level.
+Note that MicroPython will only search the top level directory and the lib directory for
+*.py files.
+Don’t bother with the \_\_init\_\_.py  files.
 These are purely documentary at the moment.
 Also ignore the test directory.
 
@@ -255,24 +315,30 @@ You can enter DCC API commands at the REPL preceded by
 
 ### Block Detector
 
-The main.py scripts in the dual\_, quad\_ and triple\_ local_detect directories are the block detector versions. The monitor two,
-four and blocks respectively.
+The main.py scripts in the dual\_, and quad\_ local_detect directories are the block detector versions. The monitor two
+and four blocks respectively.
 
 They provide MQTT connectivity
 allowing the block detector to report to JMRI or similar.
 Copy the main.py from the dual or quad directory to the top level directory on the target device.
 
-Alternatively there is a test harness test_dccrc1.py in the test directory.
-This may be run using Thonny. Load this into the Thonny editor window and ‘Run current script’
-(green play button). It will auto-detect whether on a RP Pico or
-Arduino Nano RP2040 Connect and allocate the detector pins accordingly.
-It creates the channel 1 block detector objects for the blocks.
+Alternatively there are test harnesses in the test directory.
 
-If OK you will get an invitation to type at the REPL, but the program will still be running
-in the background. The OLED display shows a ’splash’.
-Block occupancy details will be displayed on the OLED screen.
+***test_dccrc1.py*** runs the local RailCom detectors.
+
+***test_quad_blk.py*** runs the current based occupancy Train detectors.
+
+Both may be run using Thonny. Load the program into the Thonny editor window and ‘Run current script’
+(green play button). The program will auto-detect whether on a RP Pico or
+Arduino Nano RP2040 Connect and allocate the detector pins accordingly.
+It creates the channel 1 block detector objects or current based detector for the blocks.
+
+The program will run forever.
+
+Block occupancy details will be displayed on the OLED screen. Press the user button to see RailCom stats.
 
 ---
+
 
 ## DCC API
 
@@ -400,7 +466,8 @@ Wait for the new state available flag.
 
 The new state available flag is an instance of the asyncio.ThreadSafeFlag class
 and when set, it indicates that the power state has changed. This method waits
-for the flag to be set.
+for the flag to be set. When called from another asynchio thread
+that thread will wait pending the setting of the flag.
 It must be called from a coroutine.
 
 ---
@@ -427,12 +494,15 @@ ON = const(1)
 
 ---
 
-class **RComBlkDet** *(blk_name, rc_sm_num, rx_pin)*
+class **RComBlkDet** *(blk_name, rc_sm_num, rx_pin, led, dcc_pin)*
 
 Parameters
 
 - *blk_name* the name of the block
-- *rc_sm_num*  the first state machine number.
+- *rc_sm_num*  the first state machine number
+- *rx_pin* the RailCom local detector rx data pin
+- *led* the led number on the led string associated with the block
+- *dcc_pin* the RailCom local detector dcc sense pin
 
 ---
 
@@ -442,7 +512,8 @@ Wait for the new block state available flag.
 
 The new state available flag is an instance of the asyncio.ThreadSafeFlag class
 and when set, it indicates that the block detection state state has changed.
-This method waits for the flag to be set.
+This method waits for the flag to be set. When called from another asynchio thread
+that thread will wait pending the setting of the flag.
 It must be called from a coroutine.
 
 ---
@@ -506,11 +577,23 @@ function **print_stats** *(reset = True)*
 
 This prints diagnostic information on DCC commands
 and RailCom. By default the diagnostics are cleared after being printed.
-Available in both test_dcccmd and dccrc1 modules.
+Available in both test_dcccmd and test_dccrc1 modules. Press the user button
+to run this from the test_dccrc1 module.
 
 ---
 
 function **print_dyn_info** *()*
 
-This prints dynamic information received from decoders (datagram id 7).
+This prints dynamic information received from
+decoders (datagram id 7).
 Available in test_dcccmd module.
+
+---
+
+## Commissioning PCBs
+
+### Module test_lcl_bd
+
+This is a free standing module for assisting in commissioning the 4 way local detector board. It's available in the repository test directory. It is run directly from Thonny and is not installed on the Pico.
+
+It's useage is covered in the commisioning script.

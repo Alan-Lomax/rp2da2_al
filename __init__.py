@@ -1,7 +1,7 @@
 """RP2 DA2 project
     :Author: Paul Redhead
     
-        Copyright 2023, 2024, 2025 Paul Redhead
+        Copyright 2023, 2024, 2025, 2026 Paul Redhead
 
 This is the main package for Distributed Automation on RP2 MicroPython etc.
 

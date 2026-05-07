@@ -11,11 +11,12 @@ It uses the machine module for hardware interaction and the device module for ev
 
 
 
-import _thread, time, sys
+import _thread, time, sys, asyncio
 
 from micropython import alloc_emergency_exception_buf
 
-from machine import Pin, ADC
+from machine import Pin
+
 
 from device import Device
 from dcc_rc_ch1 import RComBlkDet
@@ -67,13 +68,12 @@ if __name__ == '__main__':
 
     time_stamp = time.ticks_ms()
 
-    block_list = (RComBlkDet('t001', 0, c1a_rx_pin, BlkLed(1)),
-                RComBlkDet('t002', 2, c1b_rx_pin, BlkLed(2)),
-                RComBlkDet('t003', 4, c1c_rx_pin, BlkLed(3)),
-                RComBlkDet('t004', 6, c1d_rx_pin, BlkLed(4)))
+    block_list = (RComBlkDet('Blk1', 0, c1a_rx_pin, BlkLed(1), 27),
+                RComBlkDet('Blk2', 2, c1b_rx_pin, BlkLed(2), 27),
+                RComBlkDet('Blk3', 4, c1c_rx_pin, BlkLed(3), 27),
+                RComBlkDet('Blk4', 6, c1d_rx_pin, BlkLed(4), 27))
     
     def main1():
-        # bypass screen module to avoid pulling in MQTT & WiFi
         s = Screen()
 
         while True:
@@ -91,8 +91,8 @@ if __name__ == '__main__':
         for block in (block_list):
             counts = block.get_error_counts()
             cb_count = block.get_cb_count()
-            print(f'** Channel 1 block {block.get_name()} **')
-            print(f"Call back rate: {(cb_count) * 1000 / elapsed_time:.2f} per sec")
+            print(f'** Channel 1 {block.get_name()} **')
+            print(f"Msg. rate: {(cb_count) * 1000 / elapsed_time:.2f} per sec")
             for key, value in counts.items():
                 print(f'{ERR_CODE_DECODE[key]}\t{value}')
             
@@ -102,9 +102,36 @@ if __name__ == '__main__':
                 block.reset_stats()
         time_stamp = time.ticks_ms()
 
+    async def lp():
+        while True:
+            try:
+                await asyncio.sleep_ms(1)
+            except KeyboardInterrupt:
+                break
+
+
+
     _thread.start_new_thread(main1,())
 
 
 
 
 
+if __name__ == '__main__':
+    user_sw = Pin(26, Pin.IN, Pin.PULL_UP) # user press button
+    async def lp():
+        while True:
+            try:
+                await asyncio.sleep_ms(1)
+                if user_sw.value() == 0:
+                    # button press
+                    print_stats()
+                    print()
+                    while user_sw() == 0:
+                        await asyncio.sleep_ms(0)
+
+            except KeyboardInterrupt:
+                break
+
+
+    task = asyncio.run(lp())

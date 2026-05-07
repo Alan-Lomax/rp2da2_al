@@ -40,17 +40,18 @@ from device import Device
              out_shiftdir=rp2.PIO.SHIFT_LEFT,
              autopull=True, pull_thresh=24)
 def ws2812_tx():
-    T1 = 2
-    T2 = 5
-    T3 = 3
+    """ Write to ws2812 led string
+    
+    This is a PIO program to write to a string of 
+    ws2812 (neopixel leds)."""
 
     wrap_target()
     label("bitloop")
-    out(x, 1)               .side(0)    [T3 - 1]
-    jmp(not_x, "do_zero")   .side(1)    [T1 - 1]
-    jmp("bitloop")          .side(1)    [T2 - 1]
+    out(x, 1)               .side(0)    [2]
+    jmp(not_x, "do_zero")   .side(1)    [1]
+    jmp("bitloop")          .side(1)    [4]
     label("do_zero")
-    nop()                   .side(0)    [T2 - 1]
+    nop()                   .side(0)    [4]
     wrap()
 
 
@@ -67,20 +68,23 @@ class NeoLed():
 
     RGB values may either be passed as a tuple or a single colour may be set or cleared.
 
-    Setting a colour without a value will set the maximum(255).  Clearing a colour will set 0.
+    Setting a colour without a value will set the defaul.  Clearing a colour will set 0.
     
     Attributes:
         LED_R: Red
         LED_G: Green
         LED_B: Blue
+        DEFAULT_B: Default Brightness
+        COMMS_LED: Led for communications status
+        DCC_LED: Led for DCC status
         
     """
     LED_R = const(0)
     LED_G = const(1)
     LED_B = const(2)
 
-    COMMS_LED = 0
-    DCC_LED = 1
+    COMMS_LED = const(0)
+    DCC_LED = const(1)
 
     DEFAULT_B = const(50) # full brightness is rather bright!
 
@@ -107,6 +111,7 @@ class NeoLed():
         This sets a colour (red, green or blue) and brightness value.
         args:
             colour: The colour to set.  This should be one of NeoLed.LED_R, NeoLed.LED_G or NeoLed.LED_B.
+            flush: If true the led string is written following the update
             val: The value to set the colour to.  This should be an integer between 0 and 255.
                  If not specified, it defaults to NeoLed.DEFAULT_B.
         """
@@ -126,6 +131,7 @@ class NeoLed():
         This clears the colour of the LED
         args:
             colour: The colour to clear.  This should be one of NeoLed.LED_R, NeoLed.LED_G or NeoLed.LED_B.
+            flush: If true the led string is written following the update
         """
         try:
             self._rgb[colour] = 0

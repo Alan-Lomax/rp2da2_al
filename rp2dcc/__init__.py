@@ -10,6 +10,14 @@ The following diagram shows the DCC and RailCom classes.
 
     **DCC and RailCom Class Diagram**
 
+The following diagram is a Sequence Diagram for reading the RailCom channel 1 response.    
+
+.. figure:: images/DCC-Ch1.png
+    :width: 800px
+    :align: center
+
+    **DCC Channel 1 Sequence Diagram**
+
 The following diagram is a Sequence Diagram for reading the RailCom channel 2 response.    
 
 .. figure:: images/DCC-Ch2.png

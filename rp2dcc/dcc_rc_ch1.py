@@ -63,7 +63,7 @@ class RComBlkDet(RailComRead):
     
 
    
-    def __init__(self, blk_name, rc_sm_num, rx_pin, led):
+    def __init__(self, blk_name, rc_sm_num, rx_pin, led, dcc_pin):
         """Construct the RailCom block detector
         
         This constructs the RailCom block detector. This reads channel 1. It instatiates a RailCom reader using
@@ -80,6 +80,8 @@ class RComBlkDet(RailComRead):
             blk_name: the name of the block
             rc_sm_num:  the first state machine number.
             rx_pin: the first receiver pin.
+            led: the led number on the neopixel string
+            dcc_pin: the dcc power on sense pin
         """
 
         self._id_val = {} # channel 1 payload values for ids 1 & 2
@@ -87,6 +89,7 @@ class RComBlkDet(RailComRead):
         _ = Pin(rx_pin + 1, Pin.IN) # initialise orientation pin too
         self._led = led
         self._no_resp_count = _MAX_NO_READ
+        self._dcc_pin = Pin(dcc_pin) # hard code
         self.reset_stats()
 
         """block state may have channel 1 data if ch1 responses received or None"""
@@ -97,7 +100,8 @@ class RComBlkDet(RailComRead):
 
         super().__init__(blk_name,
                         rc_sm_num,
-                        self._rx_pin)
+                        self._rx_pin,
+                        dcc_pin = self._dcc_pin)
         
         asyncio.create_task(self._check_resp())
 
@@ -169,31 +173,30 @@ class RComBlkDet(RailComRead):
         except KeyError:
             self._errors[error_code] = 1
         
-    def _rail_com_msg(self,  buffer, orientation):
+    def _rail_com_msg(self,  buffer):
         """ This is called on termination of the RailCom Channel 1 message receipt window,
-        when a channel 1 reponse has been detected.
+        when a channel 1 reponse has been detected (i.e. length > 0)
         Any decoder on the associated block returns a channel 1 message.
 
         Calls RailComRead.hw4_2_6b() to translate from raw byte to internal value.
 
+        The method overrides that in the base class.
+
+        orientation of decoder wrt the DCC signal is saved as 1 or -1 e.g. s * 2 - 1
+
         args:
             self:
             buffer:   raw data
-            orientation: orientation of DCC decoder wrt DCC signal
         """
         self._cb_count += 1 
-
-        try:
-            rx1 = RailComRead.hw4_2_6b(buffer[0])
-            if rx1 == RailComRead.ERR_OE:
+        rx1 = RailComRead.hw4_2_6b(buffer[0])
+        if rx1 == RailComRead.ERR_OE:
             # first character has overrun - most likely switching noise after end of window
             # or false trigger - not logged or parsed
-                return
-        except IndexError:
-            return # nothing there - not logged (shouldn't happen)
-
-        # other errors indicate datagram corruption - possibly due to >1
-        # decoder in block or crossing block boundary
+            return
+        # other errors indicate datagram corruption - possibly due to
+        # >1 decoder in block or crossing block boundary
+        orientation = ((buffer[0] & 0x100) >> 7) - 1
         try:
             rx2 = RailComRead.hw4_2_6b(buffer[1])
         except IndexError:
@@ -202,7 +205,6 @@ class RComBlkDet(RailComRead):
             self._id_val = {} # clear any previous datagrams
             return
 
-        
         for b in rx1, rx2:
             if b > 0x3f:
                 # it's some kind of error
@@ -264,7 +266,6 @@ class RComBlkDet(RailComRead):
         if report_data != self._blk_state: # occupancy info changed?
             self._blk_state =  report_data
             self.report_event(Device.BLK_CH1, self._blk_state)
-
 
     async def _check_resp(self):
         """ Coroutine to monitor Ch1 responses

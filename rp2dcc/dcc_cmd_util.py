@@ -85,7 +85,7 @@ class CommandPacket:
         """Get the last command
         
         This returns the most recently serialised DCC command.  It's primary purpose
-        is to allow the RailComm Channel 2 response processor to determine the command
+        is to allow the RailCom Channel 2 response processor to determine the command
         that initiated the response.
             
         returns:

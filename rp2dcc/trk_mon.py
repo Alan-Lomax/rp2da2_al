@@ -39,7 +39,6 @@ class TrkMon:
 
     The sense reading is a 16 bit number with 65535 corresponding to 3.3 volts.  We set thresholds at 1A and 2A.
 
- 
     The thresholds are used to set the NeoPixel colour:
     - < 1A = pure green
     - < 2A = yellowish
@@ -66,8 +65,11 @@ class TrkMon:
         Z_FILTER_RATIO: The 0 offset filter ratio ((filter factor - 1)/filter factor)
         THRESHOLD_1: The threshold for 1A in the current sense reading.
         THRESHOLD_2: The threshold for 2A in the current sense reading.
-        LED_B: The default brightness of the NeoPixel LED.
-        DRV_CURRENT_RATIO: convert the raw sensor reading to current in mA
+        DRV_CURRENT_RATIO: convert the raw sensor reading to current in mA.
+        STAT_MEDIAN_SIZE: The size of the statistical median filter (must be odd).
+        STAT_MEDIAN_INDEX: The index of the median value within the value list.
+        SCAN_INTERVAL: The time interval between scans in ms.
+        BRIGHT: NeoLed default brightness.
     """
 
     _this_mon = None # the singleton DCC monitor instance
@@ -87,7 +89,7 @@ class TrkMon:
 
     DRV_CURRENT_RATIO = const(3300 / (0.45 * 2.49 * 65535))  #mA per unit ADC read
 
-    BRIGHT = 12 # default brightness
+    BRIGHT = const(12) # default brightness
 
     @classmethod
     def get_instance(cls):
@@ -128,7 +130,6 @@ class TrkMon:
         # initialise the NeoPixel LED
         self._led = NeoLed(NeoLed.DCC_LED)
         self._readings = [sense_pin.read_u16() for _ in range(TrkMon.STAT_MEDIAN_SIZE)]
-        self.read_log = []
 
     def scan(self):
         """ Scan the DCC status and update the NeoPixel accordingly.

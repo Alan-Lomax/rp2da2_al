@@ -44,12 +44,14 @@ import json, asyncio
 
 # microPython imports
 from micropython import const
+import network
 
 
 # lib imports
 from device import Device
 from led_pio import NeoLed
 from wifi import WiFi
+
 
 MQTT_BROKER_PORT = const(1883)
 """ Default MQTT broker port number
@@ -169,12 +171,12 @@ class MQTTPacketOut():
                 remainder = remainder | 128
             self._header.append(remainder)
             if quot == 0:
-                break  
+                break
         try:
             writer.write(self._header)
             writer.write(self._buffer)
             await writer.drain()
-        except OSError:
+        except OSError as err:
             return False
         return True
 
@@ -239,6 +241,7 @@ class MQTTClient(Device):
     ERR_PUBACK = const(5)
     ERR_SUBACK = const(6)
     ERR_UTF8   = const(7)
+    ERR_OSR    = const(8)
 
     QOS0        = const(0)      # Quality of service 0
 
@@ -271,10 +274,14 @@ class MQTTClient(Device):
         try:
             port = conf['port']
         except KeyError:
-            port = MQTT_BROKER_PORT
+            port = MQTT_BROKER_PORT # default MQTT port
 
         self._con_params = conf['broker'], port
-        self._client_id = conf['clientId']
+        try:
+            self._client_id = conf['clientId']
+        except KeyError:
+            self._client_id = network.hostname() # default client_id to host name if not specified.
+
         self._led = NeoLed(NeoLed.COMMS_LED)
 
 
@@ -311,7 +318,7 @@ class MQTTClient(Device):
             while self._state != MQTTClient.M_CLOSED:
                 try:
                     hdr = await self._reader.read(2)
-                except OSError:
+                except OSError as err:
                     await self._close()
                     continue
                 if len(hdr) == 2:
@@ -334,7 +341,6 @@ class MQTTClient(Device):
                     else:
                         # read the remainder in one go
                         packet = await self._reader.read(l)
-
                     try:
                         await MQTTClient._RESP_HANDLER[packet_type](self, packet_flags, packet)
                     except KeyError:
@@ -406,7 +412,6 @@ class MQTTClient(Device):
     async def _puback(self, pid):
         """ Return PUBACK after receiving PUBLISH"""
         packet = MQTTPacketOut(_PUBACK, 0)
-        packet.add_byte(2)
         packet.add_uint16(pid)
         if await packet.write_buff(self._writer):
             self._ping_deferred.set()
@@ -526,7 +531,8 @@ class MQTTClient(Device):
             self._led.set(NeoLed.LED_B)
             try:
                 self._reader, self._writer = await asyncio.open_connection(*self._con_params)
-            except OSError:
+            except OSError as err:
+
                 # nothing to close - not opened!
                 return
             packet = MQTTPacketOut(_CONNECT)

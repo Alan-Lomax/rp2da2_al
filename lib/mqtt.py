@@ -162,4 +162,4 @@ class Will(MQTTAgent):
             ret_flag: True if this is a retained publication
             payload: the payload of the publication as a string
         """
-        print('will', ret_flag, payload)
+        pass

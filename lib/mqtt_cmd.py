@@ -68,14 +68,12 @@ class Power(MQTTAgent):
         self._publish_topic = pub_topic
         self._dcc = DCCCommand.get_instance()
 
-
     def _create_pub_check(self):
         """Overrides version in base class"""
         
         asyncio.create_task(self._pub_check())
         return
         
-
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
         """Handle a publication
 
@@ -113,9 +111,9 @@ class Power(MQTTAgent):
         
 
 class Cab(MQTTAgent):
-    """Cab Subscription
+    """Cab Agent
 
-    This subscription is used to handle publications to the cab topic.
+    This agent's subscription is used to handle publications to the cab topic.
     It is not used to publish a cab message, but to handle the cab message
     when it is received from the broker.
 
@@ -227,7 +225,7 @@ class Cab(MQTTAgent):
             dcc_speed = 0
         
         try:
-            # do we have as cab record for this address
+            # do we have a cab record for this address
             dir, _ = self._cab[address]
         except KeyError:
             #no create it
