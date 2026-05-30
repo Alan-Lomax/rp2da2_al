@@ -8,9 +8,9 @@ Generally it provides application specific access to the display. It knows about
 and how they are managed on screen.
 
 
-The OlED display is updated using blocked writes.
+The OLED display is updated using blocked writes.
 """
-"""       Copyright 2023, 2024  Paul Redhead
+"""       Copyright 2023, 2024, 2025, 2026 Paul Redhead
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -146,6 +146,10 @@ class Screen():
         address, cv_num = data
         self._oled.scroll_write(f'a:{address} c:{cv_num} NAK')
 
+    def _handle_un_enc(self,src, data):
+        si , v = data
+        self._oled.scroll_write(f'!ID7 i:{si} v:{v}')
+
     def _handle_mqtt_ready(self, src, data):
         """MQTT connection established
         (subscribption sent) - clear the screen if first time"""
@@ -160,4 +164,5 @@ class Screen():
                       Device.POM_CV: _handle_cv_val,
                       Device.POM_TO: _handle_pom_to,
                       Device.POM_NAK: _handle_pom_nak,
-                      Device.MC_READY: _handle_mqtt_ready}
+                      Device.MC_READY: _handle_mqtt_ready,
+                      Device.MC_U_ID7: _handle_un_enc}

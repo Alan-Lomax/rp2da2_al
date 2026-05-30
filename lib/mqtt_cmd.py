@@ -14,7 +14,7 @@ QoS2 not supported - only QoS0 or 1
 Sessions are clean - i.e. no context saved between sessions. 
 
 """
-"""       Copyright 2023, 2024, 2025  Paul Redhead
+"""       Copyright 2023, 2024, 2025, 2026  Paul Redhead
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -30,12 +30,25 @@ Sessions are clean - i.e. no context saved between sessions.
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 import asyncio
+import json
+
+from device import Device
 
 from mqtt import MQTTAgent
 
 from mqtt_client import MQTTClient
 
 from dcc_command import DCCCommand
+
+from dcc_rc_ch2 import RComCmdRsp
+
+_DYN_INFO_ENCODE = {
+    RComCmdRsp.DYN_REAL_SPEED:('SPEED', lambda x : x),
+    RComCmdRsp.DYN_TEMP:('TEMP',lambda x : x - 50),
+    RComCmdRsp.DYN_DIRECTION:('DIRECTION', lambda x : x),
+    RComCmdRsp.DYN_RECEP_STATS:('RECEP_STATS', lambda x : x),
+    RComCmdRsp.DYN_TRACK_VOLT:('TRACK_VOLTS', lambda x : x / 10 + 5)
+}
 
 
 class Power(MQTTAgent):
@@ -138,6 +151,13 @@ class Cab(MQTTAgent):
         """
         super().__init__(topic_filter, qos)
         self._dcc = DCCCommand.get_instance()
+        self._rc2 = RComCmdRsp.get_instance()
+
+    def _create_pub_check(self):
+        """Overrides version in base class"""
+        
+        asyncio.create_task(self._pub_check())
+        return
 
     def handle_publication(self, topic, dup_flag, ret_flag, payload):
         """Handle a publication
@@ -241,6 +261,28 @@ class Cab(MQTTAgent):
 
     def _handle_ns_pub(self, address, topic3, payload):
         pass
+
+    async def _pub_check(self):
+        """ Check for publication.
+        
+        Publish the RailCom dynamic info
+        """
+        while True:
+            await asyncio.sleep_ms(1000) # at the moment check once per sec
+            addr, changes = self._rc2.get_dyn_chng()
+            if addr == 0:   # no changes to report
+                continue
+            pl_dict = {}
+            for si, v in changes:
+                try:
+                    txt, lam = _DYN_INFO_ENCODE[si]
+                    pl_dict[txt] = lam(v)
+                except KeyError:
+                    # publist the unencodable subtype
+                    pl_dict['NO_ENCODE'] = si
+                    self._client.report_event(Device.MC_U_ID7,(si, v))
+            await self._client.publish(f"rcom/gbl/{addr}/id7", json.dumps(pl_dict), True, MQTTClient.QOS1)
+
 
     _CAB_CMD = {'throttle':_handle_spd_pub,
                 'direction':_handle_dir_pub,

@@ -215,6 +215,7 @@ class MQTTClient(Device):
         ERR_PUBACK : invalid publish acknowledgement
         ERR_SUBACK: invalid subscription acknowledgement
         ERR_UTF8: invalid UTF8 character
+        ERR_OSR : Operating System Error on read or write
         DEVICE_TYPE: MQTT client device type
         QOS0: Quality of service 0
         QOS1: Quality of service 1

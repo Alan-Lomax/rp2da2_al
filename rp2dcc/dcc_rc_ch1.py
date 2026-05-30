@@ -4,7 +4,7 @@
 This module contains the functions and classes for DCC RailCom block detection on Channel 1.
 
 """
-"""        Copyright (C) 2023, 2024, 2025 Paul Redhead
+"""        Copyright (C) 2023, 2024, 2025,2026 Paul Redhead
 
         This program is free software: you can redistribute it and/or modify it
         under the terms of the GNU General Public License as published by the Free Software Foundation, 
@@ -24,11 +24,9 @@ from dcc_rc_pio import RailComRead
 from device import Device
 
 
-_MAX_NO_READ = const(10)    # maximum number of missed reads/no load
-#_TIMER_PERIOD = const(50)   # time in ms between checks for current load on block 
 _CONSIST_ADDR_MASK = const(0x7F)      # DCC consist address mask
 _MAX_LONG_ADDR = const(0x27FF)      # DCC long address upper limit (inclusive)
-_RESP_TO = const(500)       # channel 1 response time out
+_RESP_TO = const(500)       # channel 1 response time out (ms)
 
 
 class RComBlkDet(RailComRead):
@@ -55,10 +53,6 @@ class RComBlkDet(RailComRead):
         - unknown (start of day)
         - no RailCom Channel 1 info available
         - RailCom Channel 1 info available
-
-    Attributes:
-        _MAX_LONG_ADDR: DCC Maximum long address
-        _SHORT_ADDR_MASK: DCC short address mask.
     """
     
 
@@ -88,7 +82,6 @@ class RComBlkDet(RailComRead):
         self._rx_pin = Pin(rx_pin, Pin.IN)
         _ = Pin(rx_pin + 1, Pin.IN) # initialise orientation pin too
         self._led = led
-        self._no_resp_count = _MAX_NO_READ
         self._dcc_pin = Pin(dcc_pin) # hard code
         self.reset_stats()
 
@@ -147,7 +140,7 @@ class RComBlkDet(RailComRead):
         return self._cb_count
     
     def reset_stats(self):
-        """ Reset diagnostic informations
+        """ Reset diagnostic information
         
         Clears the error counts and set of datagram ids.
         """
@@ -157,13 +150,10 @@ class RComBlkDet(RailComRead):
     def get_block_state(self):
         """ Get the current block state
         
-        This returns the current block state. The block state is a tuple of
-        the block status and any RailCom information available.
-        The block status may be:
-        - Device.UNKNOWN: the block state is unknown
-        - Device.EMPTY: the block is empty
-        - Device.BLK_OCC: the block is occupied, but no RailCom Channel 1 information is available
-        - Device.BLK_CH1: the block is occupied and RailCom Channel 1 information is available
+        This returns the current block state. The block state is a tuple containing
+        the RailCom information available. If no RailCom information is available block
+        is None.
+     
         """
         return self._blk_state
 
@@ -182,11 +172,26 @@ class RComBlkDet(RailComRead):
 
         The method overrides that in the base class.
 
-        orientation of decoder wrt the DCC signal is saved as 1 or -1 e.g. s * 2 - 1
+        Orientation of decoder wrt the DCC signal is saved as 1 or -1 e.g. s * 2 - 1
+
+        Buffer contains 1 or 2 bytes. Zero length reads don't get this far.
+        Longer reads are already truncated.
+
+        Overrun errors on 1st byte are quietly ignored. Overrun error on 2nd byte is
+        logged.
+
+        If the buffer only 1 byte or one of the bytes is ACK or NAK or reserved
+        in RCN-217 Table2, this is an error and is logged.
+
+        The datagram ID must be 1, 2 or 3.  Type 3 datagrams are ignored. Other
+        datagram IDs are logged as errors.
+
+        As a protection against undetected errors, to be acted on a type 1 or 2 datagram
+        must have the same payload as the preceding datagram of that type.
 
         args:
             self:
-            buffer:   raw data
+            buffer:   raw data - 1 or 2 bytes
         """
         self._cb_count += 1 
         rx1 = RailComRead.hw4_2_6b(buffer[0])
@@ -224,10 +229,19 @@ class RComBlkDet(RailComRead):
             self._log_error(RailComRead.ERR_ID)
             return
         # both values need to be present to get this far
-        # there's a valid response so set the response received flag
+        # there's a valid response so reset the monitor timer
         self._ch1_dg_rx.set()
-        self._id_val[dg_id] =  ((rx1 & 0x03) << 6) | rx2 # assemble payload
-  
+        payload =  ((rx1 & 0x03) << 6) | rx2
+        try:
+            # confirm payload against previous entry
+            if self._id_val[dg_id] != payload:
+                self._id_val[dg_id] = payload #update if changed
+                return # but nothing more this time
+        except KeyError:
+            # no previous entry
+            self._id_val[dg_id] = payload
+            return # await confirmation        
+                 
         # try and build decoder address
         try:
             if self._id_val[1] == 0:
@@ -283,7 +297,6 @@ class RComBlkDet(RailComRead):
                 # nothing happened.
                 if self._blk_state is not None:
                     self._blk_state = None
-                    self._led.update(Device.BLK_CH1, None)
                     self.report_event(Device.BLK_CH1, None)
                 continue
             # event flag set - restart timeout

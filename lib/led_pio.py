@@ -193,9 +193,8 @@ class BlkLed(NeoLed):
         elif event == Device.BLK_NPOW: # no power
             self._oc_state = Device.BLK_NPOW
             self.clear(NeoLed.LED_G, False) # suppress current occupied
-            self.clear(NeoLed.LED_B, False) # set RC occupied
+            self.clear(NeoLed.LED_B, False) # clear RC occupied
             self.set(NeoLed.LED_R, val = 10) # not too bright
-
 
 
 class NeoString():

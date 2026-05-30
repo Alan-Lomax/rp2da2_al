@@ -16,7 +16,7 @@ Sessions are clean - i.e. no context saved between sessions.
 Subscriptions are static.  The subscription list is passed to the client at instantiation and is
 immutable.
 """
-"""       Copyright 2023, 2024, 2025  Paul Redhead
+"""       Copyright 2023, 2024, 2025, 2026  Paul Redhead
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -45,10 +45,10 @@ from blk_mon import DCCBlkDet
 class Block(MQTTAgent):
     """Block Agent
 
-    This agent is used to handle publications to the reporter topic and
+    This agent is used to handle publications to the RailCom topic and
     any publications it makes.
     """
-    REPORTER_TOPIC_PREFIX = "track/reporter"
+    REPORTER_TOPIC_PREFIX = "rcom/lcl"
 
     def __init__(self, rc_block):
         """Construct the Block agent

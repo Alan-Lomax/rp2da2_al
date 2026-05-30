@@ -274,12 +274,13 @@ Preferences->Connections for the MQTT connection to access the JMRI MQTT configu
 
 ---
 
-## Installation
+## Software Installation
 
 ### General
 
 Copy the python (.py) files from the lib and rp2dcc directories to the Pico using Thonny or similar.
-Don’t replicate the repository directory structure. Copy the files from both directories to the lib directory at the Pico files system top level.
+Don’t replicate the repository directory structure. Copy the files from both directories to the
+lib directory at the Pico files system top level.
 Note that MicroPython will only search the top level directory and the lib directory for
 *.py files.
 Don’t bother with the \_\_init\_\_.py  files.
@@ -290,7 +291,7 @@ The screen driver will object if it can’t find the OLED on the i2c bus.
 Most 0.91" OLEDs include i2c pull-ups so these should not be needed.
 
 Copy the files from the conf directory to a directory on the Pico named conf.  Edit the configuration files
-as **after copying**.
+**after copying**.
 
 ### Command Station
 
@@ -315,8 +316,8 @@ You can enter DCC API commands at the REPL preceded by
 
 ### Block Detector
 
-The main.py scripts in the dual\_, and quad\_ local_detect directories are the block detector versions. The monitor two
-and four blocks respectively.
+The main.py scripts in the dual\_, and quad\_ local_detect directories are the block detector versions. They
+monitor two and four blocks respectively.
 
 They provide MQTT connectivity
 allowing the block detector to report to JMRI or similar.
@@ -338,7 +339,6 @@ The program will run forever.
 Block occupancy details will be displayed on the OLED screen. Press the user button to see RailCom stats.
 
 ---
-
 
 ## DCC API
 
@@ -594,6 +594,8 @@ Available in test_dcccmd module.
 
 ### Module test_lcl_bd
 
-This is a free standing module for assisting in commissioning the 4 way local detector board. It's available in the repository test directory. It is run directly from Thonny and is not installed on the Pico.
+This is a free standing module for assisting in commissioning the 4 way local detector board.
+It's available in the repository test directory.
+It is run directly from Thonny and is not installed on the Pico.
 
 It's useage is covered in the commisioning script.

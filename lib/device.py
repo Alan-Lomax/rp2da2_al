@@ -24,7 +24,7 @@ this.  Device drivers run on core 0. Core 1 runs a main loop which reads the que
 occur. 
 
 """
-"""       Copyright 2023, 2024, 2025  Paul Redhead
+"""       Copyright 2023, 2024, 2025, 2026  Paul Redhead
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -82,6 +82,9 @@ class Device():
         MC_CONNECT_ERR  : Connect error - broker not available
         WF_SET_LED : Set WiFi LED instruction, data is colour, value
         TO_CMD : Set Turnout (point) instruction, data is 'N' or 'R'
+        CH2_Q_FULL : Channel 2 report queue full
+        MC_U_ID7 : no encoding info for ID7 subindex
+        MC_OS_ERR : OS Error on write or read
     """
     # class variables
 
@@ -109,12 +112,15 @@ class Device():
     POM_CV    = const(30)   # CV value from read or write
     POM_TO    = const(31)   # POM access timeout
     POM_NAK   = const(32)   # POM access NAK
+    CH2_Q_FULL = const(33)  # Channel 2 report queue full
+    
 
     # MQTT Client
 
     # 40 not used
     MC_OS_ERR       = const(41) # OS Error on write or read
     MC_READY        = const(43) # initial subscriptions registered
+    MC_U_ID7        = const(44) # no encoding info for ID7 subindex
     MC_CONNECT_ERR  = const(48) # MQTT connect error 
 
     # WiFi

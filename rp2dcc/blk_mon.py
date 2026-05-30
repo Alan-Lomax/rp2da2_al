@@ -93,6 +93,7 @@ class DCCBlkDet(Device):
         - empty
         - occupied
         - unknown (start of day)
+        - unpowered (no DCC power)
 
     Attributes:
         DEVICE_TYPE: 'd' for (current) detector
@@ -101,8 +102,6 @@ class DCCBlkDet(Device):
     DEVICE_TYPE = const('d')
 
     _i2c_lock = asyncio.Lock() # to ensure only one read at a time
-    #_i2c_lock = _thread.allocate_lock()
-
 
     def __init__(self, blk_name, adc, led):
         """Construct the block current detector
@@ -115,6 +114,7 @@ class DCCBlkDet(Device):
         args:
             blk_name: the name of the block
             adc: logical number of the adc
+            led: index number of led in neopixel string
         """
         self._id_val = {} # channel 1 payload values for ids 1 & 2
         self._adc = adc #

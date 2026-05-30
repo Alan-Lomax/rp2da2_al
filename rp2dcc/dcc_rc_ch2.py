@@ -4,7 +4,7 @@
 This module contains the functions and classes for DCC RailCom DCC command mobile responses on Channel 2.
 
 """
-"""        Copyright (C) 2023, 2024, 2025 Paul Redhead
+"""        Copyright (C) 2023, 2024, 2025, 2026 Paul Redhead
 
         This program is free software: you can redistribute it and/or modify it
         under the terms of the GNU General Public License as published by the Free Software Foundation, 
@@ -17,6 +17,7 @@ This module contains the functions and classes for DCC RailCom DCC command mobil
 """
 
 import time
+from collections import deque
 from micropython import const
 
 from dcc_rc_pio import RailComRead
@@ -27,7 +28,7 @@ from device import Device
 _DG2_LEN = {0:1, 1:1, 2:1, 3:5, 4:5, 7:2, 8:5, 9:5, 10:5, 11:5, 12:5, 13:5, 14:1}
 """ Channel 2 Datagram Length
 
-This is for mobile decoders - see RCN217  Table 6. The table for accessory (static) decoders
+This is for mobile decoders - see RCN-217  Table 6. The table for accessory (static) decoders
 differs, but no plans to support them yet.
 
 Indexed by datagram id, contains the additional number of 6 bit groups to be concatenated.
@@ -84,11 +85,22 @@ class RComCmdRsp(RailComRead):
     DYN_TEMP = const(26)       # temperature
     DYN_DIRECTION   = const(27)# direction status byte
     DYN_TRACK_VOLT  = const(46)# track voltage
-
-
     
     # error codes as detected by low level code
     ERR_CODE = (RailComRead.ERR_WH, RailComRead.ERR_WL, RailComRead.ERR_OE, RailComRead.ERR_CB)
+
+    _rc_ch2 = None
+
+    @classmethod
+    def get_instance(cls):
+        """ Get the RailCom ch2 detector instance.
+
+        This returns the singleton instance.
+
+        Returns:
+            The RailCom ch2 detecto instance
+        """
+        return cls._rc_ch2
 
     def __init__(self, rc_sm_num, rx_pn, enable_pn):
         """DCC Command object constructor
@@ -112,7 +124,11 @@ class RComCmdRsp(RailComRead):
             rx_pn:  First pin number for RailCom rx
             enable_pn: Pin number that enables the DRV8874 - it's only read here
         """
+        if not RComCmdRsp._rc_ch2 is None:
+            raise RuntimeError ('Attempt to create 2nd RC ch2 responder')
+        RComCmdRsp._rc_ch2 = self
         self._dyn_info = {} # other dynamic info
+        self._dyn_chng = deque([],32) # addresses with dynamic info changes
         self._pom_acc = {}   # outstanding cv accesss requests by command type/address
 
         self._errors = {} # error counts
@@ -140,6 +156,20 @@ class RComCmdRsp(RailComRead):
         """
         return self._dgs
     
+    def get_dyn_chng(self):
+        """ get changes to dyn info
+
+        returns:
+            dyn info for first address in queue
+        """
+        try:
+            addr = self._dyn_chng.popleft()
+        except IndexError:
+            # queue empty
+            return 0,[]
+        return addr, [(si, self._dyn_info[(a, si)]) for (a, si) in self._dyn_info.keys()
+                  if a == addr]
+
     def reset_stats(self):
         """ Reset diagnostic information
         
@@ -286,11 +316,23 @@ class RComCmdRsp(RailComRead):
                 value = payload >> 6
                 if dyn_si <= 1: # speed subindex 0 or 1
                     # sub index 0 : 0 - 255 kph, 1 : > 256 
-                    # store speed under sub-index 0 
-                    self._dyn_info[addr, 0] = value + (dyn_si << 8)
-                else:
-                    # keep record of other dynamics
-                    self._dyn_info[addr, dyn_si] = value
+                    # store speed under sub-index 0
+                    value = value + (dyn_si << 8)
+                    dyn_si = 0
+                try:
+                    old_val = self._dyn_info[(addr, dyn_si)]
+                except KeyError:
+                    old_val = None
+                if old_val is None or old_val != value:
+                    #update value
+                    self._dyn_info[(addr, dyn_si)] = value
+                    # and add address to list of changes
+                    if addr not in self._dyn_chng:
+                        try:
+                            self._dyn_chng.append(addr)
+                        except IndexError:
+                            self.report_event(Device.CH2_Q_FULL,None)
+
             elif id == RComCmdRsp.DG_POM:
                 # POM cv response RCN219 5.1
                 # payload is cv value from last POM command
