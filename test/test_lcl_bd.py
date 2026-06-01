@@ -5,9 +5,10 @@ connection and soldering integrity rather than functionality.
 
 """
 
-from machine import Pin, I2C
+from machine import Pin, I2C, Timer, unique_id
 from neopixel import NeoPixel
-import time
+import time, sys
+import micropython
 
 
 # ADC1015 parameters to start read.
@@ -26,35 +27,90 @@ _adc_addr = {0:(72, _ADC_CONF0),
              6:(73, _ADC_CONF2),
              7:(73, _ADC_CONF3)}
 
+UNLIT = (0, 0, 0)
+RED = (50, 0, 0)
+GREEN = (0, 50, 0)
+BLUE = (0, 0, 50)
+WHITE = (40, 40, 40)
+ORANGE = (40, 10, 0)
 
 
-# pins used as inputs from detector
-pins = [Pin(x, Pin.IN) for x in (14, 15, 16, 17, 18, 19, 20, 21, 27)]
+# pins used as rx inputs from detector
+rx_pins = [Pin(x, Pin.IN) for x in (14, 16, 18, 20)]
+
+or_pins = [Pin(x, Pin.IN) for x in (15, 17, 19, 21)]
+
+ds_pin = Pin(21, Pin.IN)
+
 # i2c pin numbers
-i2c_pn = (4, 5, 6 ,7)
+i2c_pn = (4, 5),(6 ,7)
 
 # PICO on board LED
 led = Pin("LED", Pin.OUT)
-# last neopixel in chain
+# five neopixels in chain
 np = NeoPixel(Pin(22), 5)
 # user press button
 sw = Pin(26, Pin.IN, Pin.PULL_UP)
 
 
-np.fill((0, 0, 0))
+np.fill(UNLIT)
 np.write()
 
-print()
-print("RailCom Quad Local Detector Commissioning Tests")
-print("Enter test function call at >>> prompt")
+t1 = Timer() # LED Flasher
 
-def scan_pins():
+timer_test_num = 0
+timer_step = 0
+def timer_cb(t):
+    global timer_test_num, timer_step
+    if timer_test_num == 0:
+        led.value(led.value() ^ 1)
+    elif timer_test_num == 1:
+        if timer_step == 0:
+            np.fill(WHITE)
+            timer_step = 1
+        else:
+            np.fill((UNLIT))
+            timer_step = 0
+        np.write()
+
+def led_test():
+    global timer_test_num
+    timer_test_num = 0
+    t1.init(mode = Timer.PERIODIC, freq = 1, callback = timer_cb)
+
+def np_test():
+    global timer_test_num
+    timer_test_num = 1
+    t1.init(mode = Timer.PERIODIC, freq = 1, callback = timer_cb)
+
+def chk_proc():
+    build = sys.implementation._build # get MicroPython build details
+    print(build)
+    print(f"Unique Id {unique_id().hex()}")
+
+    if build.find("PICO") == -1:
+        # not an RP Pico
+        np.fill(RED)
+        np.write()
+        return
+    np.fill((UNLIT))    
+    if build.find("PICO2") == -1:
+        # not Pico2 - must be Pico
+        np[0] = GREEN
+    else:
+        np[0] = BLUE
+    if build.find("_W") != -1:
+        np[1] = BLUE
+    np.write()
+
+
+
+def scan_pins(pins):
     """Scan RailCom detector Pins 
 
     Scan the GPIOs associated with the local RailCom detector outputs.
 
-    RX data pins have even numbers. Orientation indication pins are odd numbers, but
-    Pin 27 is DCC power on indication (low for true).
+    RX data pins have even numbers. Orientation indication pins are odd numbers,
     
     As it happens with no DCC power connected
     even numbered pins should be '0'
@@ -72,14 +128,23 @@ def scan_pins():
 
     Take multiple samples to ensure both '0' and '1' readings are seen on odd numbered pin.
     """
+    print("Control + C to stop test.")
+    np.fill(UNLIT)
+    try:
+        while True:
+            pin = iter(pins)
+            for d in range(4):
+                np[d] = GREEN if next(pin).value() == 1 else UNLIT
+            np.write()
+    except KeyboardInterrupt:
+        pass
 
     for p in pins:
         print(p, p.value())
 
 
 
-def scan_i2c():
-
+def scan_i2c(i):
     """
     I2C sca and scl pins should be high due to pull ups.
     
@@ -90,19 +155,41 @@ def scan_i2c():
     With DDC power
 
     I2C0 scan returns decimal 60 (OLED).
-    I2C1 scan returns decimal 72 & 74 (ADC).
+    I2C1 scan returns decimal 72 & 73 (ADC).
+
+    Args:
+        i: I2C port number
     """
+    """
+    I2C sca and scl pins should be high due to pull ups.
 
-    for p in i2c_pn:
-        pin = Pin(p, Pin.IN)
-        print(pin, pin.value())
+    I2C0 scan returns decimal 60 (OLED).
+
+    """
+    sda = Pin(i2c_pn[i][0], Pin.IN)
+    scl = Pin(i2c_pn[i][1], Pin.IN)
+    print("sda",sda, sda.value())
+    print("scl",scl, scl.value())
+     # I2C0 scan should return decimal 60 (OLED) 
+     # I2C1 scan should return decimal 72 & 73
+    scan = I2C(i).scan()
+    np.fill(RED)
+    if sda.value() == 1:
+        np[0] = GREEN
+    if scl.value() == 1:
+        np[1] = GREEN
+
+    if 60 in scan:
+        np[2] = BLUE
+    if 72 in scan:
+        np[3] = BLUE
+    if 73 in scan:
+        np[4] = BLUE    
+ 
+    np.write()
+    print(f"I2C{i} scan: {scan}")
 
 
-    # I2C0 scan should return decimal 60 (OLED)
-    print("I2C0 scan:", I2C(0).scan())
-    # I2C1 scan should return nothing with no DCC power
-    # I2C1 scan should return decimal 72 & 74 with DCC power applied
-    print("I2C1 scan:", I2C(1).scan())
 
 def test_sw2():
     """check user button 
@@ -114,20 +201,31 @@ def test_sw2():
 
         Ctrl + C to exit.
     """
+    print("Control + C to stop test.")
+    np.fill(UNLIT)
     try:
         while True:
             swv = sw.value()
-            led.value(not swv)
-            np.__setitem__(np.__len__() - 1, (swv * 20,0,0))
+            led.value(swv ^ 1)
+            #np.__setitem__(np.__len__() - 1, (swv * 20,0,0))
+            np[-1] = (swv * 20,0,0)
             np.write()
     except KeyboardInterrupt:
         print("SW 2 Test Exit")
-        np.fill((0, 0, 0))
+        np.fill(UNLIT)
         np.write()
         led.value(0)
 
 def test_DCC_sense():
+    np.fill(UNLIT)
+    np.write()
     count = 0
+    def disp(c):
+        np.fill(UNLIT)
+        np[c % 5] = BLUE
+        np.write()
+
+
     def _sense_isr(pin):
         nonlocal count
         if pin.value() == 0:
@@ -135,6 +233,8 @@ def test_DCC_sense():
             return
         # assumed cut out
         count += 1
+        micropython.schedule(disp, count)
+
 
     sense_pin = Pin(27, Pin.IN)
     sense_pin.irq(_sense_isr, Pin.IRQ_RISING, hard = True)
@@ -192,3 +292,50 @@ def test_adc():
             return
         
 
+
+
+tests = {
+            0:("Flash Onboard LED", led_test,()),
+            1:("Flash NeoPix", np_test,()),
+            2:("Check processor", chk_proc,()),
+            3:("Check User Switch", test_sw2,()),
+            4:("Check I2C 0", scan_i2c,(0,)),
+            5:("Check I2C 1", scan_i2c,(1,)),
+            6:("Check rx pins", scan_pins, (rx_pins,)),
+            7:("Check or pins", scan_pins, (or_pins,)),
+            8:("DCC Sense", test_DCC_sense,())
+        }
+
+
+
+def do_test(tn = None):
+    global test_num
+    t1.deinit() # stop any flashing!
+    led.value(1)
+    if tn is not None:
+        test_num = tn
+    descrip, test_fn , param = tests[test_num]
+    print(f"** {descrip} **")
+    test_fn(*param)
+
+
+if __name__ == '__main__':
+    print()
+    print("RailCom Quad Local Detector Commissioning Tests")
+    print()
+    nxt_tst = 0
+
+    test_keys = sorted(tests.keys())
+    # list tests
+    for k in test_keys:
+        print(k, tests[k][0])
+    # stop when last test done
+    while nxt_tst < len(test_keys):
+        print()
+        ip = input('>')
+        print(ip)
+        if len(ip) > 0:
+            nxt_tst = int(ip)
+        do_test(nxt_tst)
+        nxt_tst += 1
+        

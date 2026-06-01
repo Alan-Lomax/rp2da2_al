@@ -125,11 +125,11 @@ def scan_i2c():
      # I2C0 scan should return decimal 60 (OLED)
     scan = I2C(0).scan()
     np.fill(UNLIT)
-    if sda == 0:
+    if sda.value() == 0:
         np[0] = RED
-    if scl == 0:
+    if scl.value() == 0:
         np[1] = RED
-    if scl ==0 or sda == 0:
+    if scl.value() == 0 or sda.value() == 0:
         # pull up missing
         np.write()
         return
@@ -138,8 +138,8 @@ def scan_i2c():
         np[1] = GREEN
     else:
         # orange orange
-        np[0] = (ORANGE)
-        np[0] = (ORANGE)
+        np[0] = ORANGE
+        np[1] = ORANGE
     np.write()
     print("I2C0 scan:", scan)
 
